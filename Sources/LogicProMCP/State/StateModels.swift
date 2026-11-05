@@ -474,12 +474,22 @@ struct RegionInventoryPayload: Codable, Sendable {
         /// How many of those are inside the visible bounds. Equal to `trackHeaders` means the
         /// enumeration saw every track and an empty region result for any of them is genuine.
         let trackHeadersInViewport: Int?
+        /// Members of the Track Content group that did not read. Above zero, the read is not
+        /// complete: an unread member may hold a region.
+        let unreadableContentMembers: Int?
 
-        init(layoutItems: Int, nonRegion: Int, trackHeaders: Int? = nil, trackHeadersInViewport: Int? = nil) {
+        init(
+            layoutItems: Int,
+            nonRegion: Int,
+            trackHeaders: Int? = nil,
+            trackHeadersInViewport: Int? = nil,
+            unreadableContentMembers: Int? = nil
+        ) {
             self.layoutItems = layoutItems
             self.nonRegion = nonRegion
             self.trackHeaders = trackHeaders
             self.trackHeadersInViewport = trackHeadersInViewport
+            self.unreadableContentMembers = unreadableContentMembers
         }
 
         enum CodingKeys: String, CodingKey {
@@ -487,6 +497,7 @@ struct RegionInventoryPayload: Codable, Sendable {
             case nonRegion
             case trackHeaders = "track_headers"
             case trackHeadersInViewport = "track_headers_in_viewport"
+            case unreadableContentMembers = "unreadable_content_members"
         }
     }
 

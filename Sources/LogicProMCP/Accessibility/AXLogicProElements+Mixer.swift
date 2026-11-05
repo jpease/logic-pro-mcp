@@ -279,7 +279,12 @@ extension AXLogicProElements {
             }
         }
 
-        for child in children {
+        // The walk starts at the arrange window: its Browser panel and any long table or outline
+        // are not descended into (Logic 13's Browser held this walk for minutes).
+        let walked = depth == 0
+            ? AXHelpers.walkRootChildren(of: element, from: children, runtime: runtime)
+            : AXHelpers.walkChildren(of: element, from: children, runtime: runtime)
+        for child in walked {
             collectMixerAreaCandidates(
                 child,
                 runtime: runtime,

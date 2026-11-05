@@ -129,6 +129,14 @@ On Logic 12.2, marker reads require the marker list surface to be available. An 
 
 Refresh `logic://tracks` first. Current builds promote trusted live track-cache counts into project info when saved metadata is incomplete.
 
+### Logic Pro 13: every tool times out while the Browser is open
+
+Logic 13's Browser panel exposes each search result to Accessibility, thousands of rows for a broad filter, and builds before this fix read all of them on every arrange-window search, so `health`, `get_regions`, `goto_position` and `record_sequence` ran out their deadlines. Current builds skip the Browser panel and do not descend into long tables. On an older build, close the Browser (`B`) or narrow its filter.
+
+### Logic Pro 13: `get_regions` is empty or `record_sequence` reports `readback_mismatch`
+
+Logic 13 can fail the whole Track Content children read (`-25200`). Current builds read its members one at a time; `_debug.unreadable_content_members` above zero means some still did not read, and the response says `complete:false`.
+
 ## MCU and Mixer
 
 ### Mixer writes return `channels_exhausted`

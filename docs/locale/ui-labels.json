@@ -626,6 +626,32 @@
     "zh-TW": "derived"
    }
   },
+  "browserPanelLabel": {
+   "canonical": "Browser",
+   "variants": [
+    "브라우저",
+    "ブラウザ",
+    "Explorador",
+    "Navigateur",
+    "Navegador",
+    "浏览器",
+    "瀏覽器"
+   ],
+   "rationale": "Identifies the Browser panel so descendant walks from the arrange window skip it; read-only classifier.",
+   "match": "exact",
+   "coverage": {
+    "en-US": "unmeasured",
+    "ko-KR": "unmeasured",
+    "ja-JP": "unmeasured",
+    "de-DE": "unmeasured",
+    "es-ES": "unmeasured",
+    "fr-FR": "unmeasured",
+    "it-IT": "unmeasured",
+    "pt-BR": "unmeasured",
+    "zh-CN": "unmeasured",
+    "zh-TW": "unmeasured"
+   }
+  },
   "busOutputLabelPrefix": {
    "canonical": "bus",
    "variants": [

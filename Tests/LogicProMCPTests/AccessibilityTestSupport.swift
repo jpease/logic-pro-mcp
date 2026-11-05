@@ -69,6 +69,7 @@ final class FakeAXRuntimeBuilder: @unchecked Sendable {
         setAttributeHandler: (@Sendable (AXUIElement, String, CFTypeRef) -> Bool)?,
         performActionHandler: (@Sendable (AXUIElement, String) -> Bool)?,
         performActionResultHandler: (@Sendable (AXUIElement, String) -> Result<Void, AXHelpers.AXStatusError>)? = nil,
+        childAtIndexResultHandler: (@Sendable (AXUIElement, Int) -> Result<AXUIElement?, AXHelpers.AXStatusError>?)? = nil,
         executeAppleScript: @escaping @Sendable (String) async -> ChannelResult = {
             await AppleScriptChannel.executeAppleScript($0)
         }
@@ -141,7 +142,15 @@ final class FakeAXRuntimeBuilder: @unchecked Sendable {
                 }
                 return .success(bridge(attributes[key(for: element)]?[attribute]))
             },
-            performActionResult: performActionResultHandler
+            performActionResult: performActionResultHandler,
+            // Like `childrenResult`: without it a one-member read would reach the live AX API.
+            childAtIndexResult: { [self] element, index in
+                if let handled = childAtIndexResultHandler?(element, index) {
+                    return handled
+                }
+                let members = children[key(for: element)] ?? []
+                return .success(members.indices.contains(index) ? members[index] : nil)
+            }
         )
     }
 
@@ -164,6 +173,7 @@ final class FakeAXRuntimeBuilder: @unchecked Sendable {
         setAttributeHandler: (@Sendable (AXUIElement, String, CFTypeRef) -> Bool)?,
         performActionHandler: (@Sendable (AXUIElement, String) -> Bool)?,
         performActionResultHandler: (@Sendable (AXUIElement, String) -> Result<Void, AXHelpers.AXStatusError>)? = nil,
+        childAtIndexResultHandler: (@Sendable (AXUIElement, Int) -> Result<AXUIElement?, AXHelpers.AXStatusError>?)? = nil,
         executeAppleScript: @escaping @Sendable (String) async -> ChannelResult = {
             await AppleScriptChannel.executeAppleScript($0)
         }
@@ -178,7 +188,8 @@ final class FakeAXRuntimeBuilder: @unchecked Sendable {
                 childrenResultHandler: childrenResultHandler,
                 setAttributeHandler: setAttributeHandler,
                 performActionHandler: performActionHandler,
-                performActionResultHandler: performActionResultHandler
+                performActionResultHandler: performActionResultHandler,
+                childAtIndexResultHandler: childAtIndexResultHandler
             ),
             executeAppleScript: executeAppleScript
         )

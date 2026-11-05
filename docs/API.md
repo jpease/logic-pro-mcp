@@ -250,6 +250,8 @@ Destructive or file-writing paths require confirmation. `save_as` verifies the r
 
 `get_regions` returns `{ regions, complete, scope, reason, returned_count, _debug }`. Logic's AX tree currently exposes the visible arrange viewport only, so the response reports `complete:false`, `scope:"visible_arrange_area"`, and `reason:"logic_ax_viewport_only"`; callers must not treat `regions` as a project-wide inventory. Project audit preserves that limitation as `ax_visible_subset`, emits `region_inventory_partial`, and withholds empty-track claims for unseen lanes.
 
+On Logic Pro 13 the Track Content group's whole-list `AXChildren` read can fail (`-25200`); its members are then read one at a time. `_debug.unreadable_content_members` counts the members that still did not read, and any count above zero makes the response `complete:false`.
+
 ### `logic_audio`
 
 `analyze_file` inspects an existing audio artifact and reports duration, level, silence ratio, and verification status. It does not mutate Logic.

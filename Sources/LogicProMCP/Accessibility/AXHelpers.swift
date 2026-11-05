@@ -28,6 +28,9 @@ enum AXHelpers {
         /// Boolean action seam for existing test runtimes that cannot report an
         /// AXError status.
         let performActionResult: (@Sendable (AXUIElement, String) -> Result<Void, AXStatusError>)?
+        /// Injectable one-member children seam (`AXUIElementCopyAttributeValues` at one index).
+        /// `nil` means "use the production read".
+        let childAtIndexResult: (@Sendable (AXUIElement, Int) -> Result<AXUIElement?, AXStatusError>)?
 
         /// Explicit memberwise initializer, replacing the compiler-synthesized one so
         /// `childrenResult` can default to `nil`. Every existing construction that omits
@@ -44,7 +47,8 @@ enum AXHelpers {
             actionNamesResult: (@Sendable (AXUIElement) -> Result<[String], AXStatusError>)? = nil,
             childrenResult: (@Sendable (AXUIElement) -> Result<[AXUIElement], AXStatusError>)? = nil,
             attributeValueResult: (@Sendable (AXUIElement, String) -> Result<AnyObject?, AXStatusError>)? = nil,
-            performActionResult: (@Sendable (AXUIElement, String) -> Result<Void, AXStatusError>)? = nil
+            performActionResult: (@Sendable (AXUIElement, String) -> Result<Void, AXStatusError>)? = nil,
+            childAtIndexResult: (@Sendable (AXUIElement, Int) -> Result<AXUIElement?, AXStatusError>)? = nil
         ) {
             self.axApp = axApp
             self.attributeValue = attributeValue
@@ -58,6 +62,7 @@ enum AXHelpers {
             self.childrenResult = childrenResult
             self.attributeValueResult = attributeValueResult
             self.performActionResult = performActionResult
+            self.childAtIndexResult = childAtIndexResult
         }
 
         static let production = Runtime(
@@ -394,6 +399,74 @@ enum AXHelpers {
         return projectChildrenStatus(status, value)
     }
 
+    /// One member of an element's children, read on its own. `nil` is an index AX answered with
+    /// no element.
+    static func childResult(
+        at index: Int,
+        of element: AXUIElement,
+        runtime: Runtime = .production
+    ) -> Result<AXUIElement?, AXStatusError> {
+        if let injected = runtime.childAtIndexResult {
+            return injected(element, index)
+        }
+        var values: CFArray?
+        let status = AXUIElementCopyAttributeValues(
+            element, kAXChildrenAttribute as CFString, index, 1, &values
+        )
+        guard status == .success else { return .failure(AXStatusError(raw: status.rawValue)) }
+        guard let values else { return .success(nil) }
+        return .success(decodeChildrenArray(values).first)
+    }
+
+    /// An element's children, and how many of them could not be read.
+    struct MemberwiseChildren {
+        let members: [AXUIElement]
+        let unreadable: Int
+    }
+
+    /// An element's children, read one member at a time when the whole-list read fails.
+    ///
+    /// AX vends `AXChildren` as one array, and one member it cannot produce fails the whole read
+    /// with `kAXErrorFailure` (-25200). Measured on Logic 13.0, 2026-11-05: the arrange window's
+    /// `Tracks contents` group reports 9 children by count, its `AXChildren` read fails with -25200,
+    /// and reading index by index returns 7 of them (the per-track lanes holding the regions, and
+    /// automation-lane buttons) while 2 indices fail. Read as a whole it looked empty, so a project
+    /// with three regions reported none.
+    ///
+    /// Only -25200 is read member by member; an absence is an empty list, and any other failure is
+    /// returned. `unreadable` counts the members that did not read, so a caller can decline a
+    /// completeness claim it would otherwise make.
+    static func childrenMemberwise(
+        _ element: AXUIElement,
+        runtime: Runtime = .production
+    ) -> Result<MemberwiseChildren, AXStatusError> {
+        switch childrenResult(element, runtime: runtime) {
+        case let .success(children):
+            return .success(MemberwiseChildren(members: children, unreadable: 0))
+        case let .failure(error) where error.isDefinitiveAbsence:
+            return .success(MemberwiseChildren(members: [], unreadable: 0))
+        case let .failure(error) where error == AXStatusError(raw: AXError.failure.rawValue):
+            guard let count = runtime.childCount(element) else { return .failure(error) }
+            var members: [AXUIElement] = []
+            var unreadable = 0
+            for index in 0..<count {
+                switch childResult(at: index, of: element, runtime: runtime) {
+                case let .success(member?):
+                    members.append(member)
+                case .success(nil), .failure:
+                    unreadable += 1
+                }
+            }
+            Log.debug(
+                "AXChildren failed (-25200); read \(members.count) of \(count) members one at a time",
+                subsystem: "ax"
+            )
+            return .success(MemberwiseChildren(members: members, unreadable: unreadable))
+        case let .failure(error):
+            return .failure(error)
+        }
+    }
+
     /// Decode a raw `kAXChildrenAttribute` value into `[AXUIElement]`, guarding
     /// the `CFArray` downcast (H-6 parity with getPosition/getSize). A malformed
     /// or mocked children attribute that is NOT a CFArray would make
@@ -487,7 +560,8 @@ enum AXHelpers {
     }
 
     /// Recursive version of findChild. Searches the entire subtree via DFS.
-    /// Use sparingly — deep trees can be slow.
+    /// Use sparingly — deep trees can be slow. A row container below `element` is walked as
+    /// `walkChildren` describes.
     static func findDescendant(
         of element: AXUIElement,
         role: String? = nil,
@@ -496,8 +570,25 @@ enum AXHelpers {
         maxDepth: Int = 10,
         runtime: Runtime = .production
     ) -> AXUIElement? {
+        firstDescendant(
+            of: element, role: role, title: title, identifier: identifier,
+            maxDepth: maxDepth, isRoot: true, runtime: runtime
+        )
+    }
+
+    private static func firstDescendant(
+        of element: AXUIElement,
+        role: String?,
+        title: String?,
+        identifier: String?,
+        maxDepth: Int,
+        isRoot: Bool,
+        runtime: Runtime
+    ) -> AXUIElement? {
         guard maxDepth > 0 else { return nil }
-        let children = getChildren(element, runtime: runtime)
+        let children = isRoot
+            ? walkRootChildren(of: element, runtime: runtime)
+            : walkChildren(of: element, runtime: runtime)
         for child in children {
             let roleMatch = role == nil || getRole(child, runtime: runtime) == role
             let titleMatch = title == nil || getTitle(child, runtime: runtime) == title
@@ -505,9 +596,9 @@ enum AXHelpers {
             if roleMatch && titleMatch && idMatch {
                 return child
             }
-            if let found = findDescendant(
+            if let found = firstDescendant(
                 of: child, role: role, title: title, identifier: identifier,
-                maxDepth: maxDepth - 1, runtime: runtime
+                maxDepth: maxDepth - 1, isRoot: false, runtime: runtime
             ) {
                 return found
             }
@@ -600,7 +691,7 @@ enum AXHelpers {
     ) -> Census {
         var hits: [AXUIElement] = []
         collectMatching(of: element, role: role, title: title, identifier: identifier,
-                        maxDepth: maxDepth, runtime: runtime, into: &hits)
+                        maxDepth: maxDepth, isRoot: true, runtime: runtime, into: &hits)
         return Census(element: hits.count == 1 ? hits[0] : nil, candidates: hits.count, matches: hits)
     }
 
@@ -628,6 +719,7 @@ enum AXHelpers {
             title: title,
             identifier: identifier,
             maxDepth: maxDepth,
+            isRoot: true,
             runtime: runtime,
             into: &hits
         ) {
@@ -648,11 +740,15 @@ enum AXHelpers {
         title: String?,
         identifier: String?,
         maxDepth: Int,
+        isRoot: Bool,
         runtime: Runtime,
         into results: inout [AXUIElement]
     ) {
         guard maxDepth > 0 else { return }
-        for child in getChildren(element, runtime: runtime) {
+        let children = isRoot
+            ? walkRootChildren(of: element, runtime: runtime)
+            : walkChildren(of: element, runtime: runtime)
+        for child in children {
             let roleMatch = role == nil || getRole(child, runtime: runtime) == role
             let titleMatch = title == nil || getTitle(child, runtime: runtime) == title
             let idMatch = identifier == nil || getIdentifier(child, runtime: runtime) == identifier
@@ -660,7 +756,7 @@ enum AXHelpers {
                 results.append(child)
             }
             collectMatching(of: child, role: role, title: title, identifier: identifier,
-                            maxDepth: maxDepth - 1, runtime: runtime, into: &results)
+                            maxDepth: maxDepth - 1, isRoot: false, runtime: runtime, into: &results)
         }
     }
 
@@ -670,11 +766,12 @@ enum AXHelpers {
         title: String?,
         identifier: String?,
         maxDepth: Int,
+        isRoot: Bool,
         runtime: Runtime,
         into results: inout [AXUIElement]
     ) -> Result<Void, AXStatusError> {
         guard maxDepth > 0 else { return .success(()) }
-        let children: [AXUIElement]
+        var children: [AXUIElement]
         switch childrenResult(element, runtime: runtime) {
         case let .success(observed):
             children = observed
@@ -682,6 +779,16 @@ enum AXHelpers {
             children = []
         case let .failure(error):
             return .failure(error)
+        }
+        if isRoot {
+            children = walkRootChildren(of: element, from: children, runtime: runtime)
+        } else {
+            switch walkChildrenResult(of: element, from: children, runtime: runtime) {
+            case let .success(walked):
+                children = walked
+            case let .failure(error):
+                return .failure(error)
+            }
         }
         for child in children {
             switch descendantMatchesResult(
@@ -704,6 +811,7 @@ enum AXHelpers {
                 title: title,
                 identifier: identifier,
                 maxDepth: maxDepth - 1,
+                isRoot: false,
                 runtime: runtime,
                 into: &results
             ) {
@@ -762,6 +870,7 @@ enum AXHelpers {
     }
 
     /// Collect all descendants matching criteria. Useful for enumerating track headers, etc.
+    /// A row container below `element` is walked as `walkChildren` describes.
     static func findAllDescendants(
         of element: AXUIElement,
         role: String? = nil,
@@ -769,7 +878,9 @@ enum AXHelpers {
         runtime: Runtime = .production
     ) -> [AXUIElement] {
         var results: [AXUIElement] = []
-        collectDescendants(of: element, role: role, maxDepth: maxDepth, runtime: runtime, into: &results)
+        collectDescendants(
+            of: element, role: role, maxDepth: maxDepth, isRoot: true, runtime: runtime, into: &results
+        )
         return results
     }
 
@@ -777,17 +888,117 @@ enum AXHelpers {
         of element: AXUIElement,
         role: String?,
         maxDepth: Int,
+        isRoot: Bool,
         runtime: Runtime,
         into results: inout [AXUIElement]
     ) {
         guard maxDepth > 0 else { return }
-        let children = getChildren(element, runtime: runtime)
+        let children = isRoot
+            ? walkRootChildren(of: element, runtime: runtime)
+            : walkChildren(of: element, runtime: runtime)
         for child in children {
             if role == nil || getRole(child, runtime: runtime) == role {
                 results.append(child)
             }
-            collectDescendants(of: child, role: role, maxDepth: maxDepth - 1, runtime: runtime, into: &results)
+            collectDescendants(
+                of: child, role: role, maxDepth: maxDepth - 1, isRoot: false, runtime: runtime, into: &results
+            )
         }
+    }
+
+    /// A table or outline with more children than this is not descended into by a walk that passes
+    /// through it.
+    static let walkRowContainerLimit = 64
+
+    private static let walkRowContainerRoles: Set<String> = [
+        kAXTableRole as String,
+        kAXOutlineRole as String,
+    ]
+
+    /// The children a descendant walk starts from: all of the root's, except that a window's
+    /// Browser panel is left out.
+    ///
+    /// Logic Pro 13 replaced the Library with a Browser, a direct child of the arrange window whose
+    /// results table vends every result as a row. Measured on Logic 13.0 with the Instruments
+    /// filter: 6,219 children, 53 rows on screen, and about 0.7 ms per attribute read on an
+    /// off-screen row against 0.04 ms on screen. The table sits 8 levels under the window, so every
+    /// deeper walk from the window read all of it: `get_regions`' group walk had not finished after
+    /// 60 s, and the poller's Mixer search held the Accessibility channel for minutes while the
+    /// tools queued behind it ran out their deadlines. Nothing a walk from the window looks for is
+    /// in the Browser, and its rows carry patch names a name lookup could mistake for a track.
+    ///
+    /// A child whose role or description does not read stays in the walk.
+    static func walkRootChildren(of root: AXUIElement, runtime: Runtime) -> [AXUIElement] {
+        walkRootChildren(of: root, from: getChildren(root, runtime: runtime), runtime: runtime)
+    }
+
+    /// `walkRootChildren` over children the caller has already read.
+    static func walkRootChildren(
+        of root: AXUIElement,
+        from children: [AXUIElement],
+        runtime: Runtime
+    ) -> [AXUIElement] {
+        guard getRole(root, runtime: runtime) == (kAXWindowRole as String) else { return children }
+        return children.filter { child in
+            guard isBrowserPanel(child, runtime: runtime) else { return true }
+            Log.debug("walk skips the window's Browser panel", subsystem: "ax")
+            return false
+        }
+    }
+
+    /// A window child described as Logic 13's Browser panel.
+    static func isBrowserPanel(_ element: AXUIElement, runtime: Runtime) -> Bool {
+        getRole(element, runtime: runtime) == (kAXGroupRole as String)
+            && AXLocalePolicy.browserPanelLabel.matches(getDescription(element, runtime: runtime))
+    }
+
+    /// The children a descendant walk descends into below its root.
+    ///
+    /// A table or outline with more than `walkRowContainerLimit` children is a leaf: the walk does
+    /// not read its rows. The Browser's results table is the measured case (see `walkRootChildren`);
+    /// a walk that crosses it from elsewhere, or crosses any other long list, pays one attribute
+    /// read per row and cell otherwise. A walk ROOTED at such a container still reads every row, so
+    /// a caller that asks for a container's contents gets all of them.
+    static func walkChildren(of element: AXUIElement, runtime: Runtime) -> [AXUIElement] {
+        walkChildren(of: element, from: getChildren(element, runtime: runtime), runtime: runtime)
+    }
+
+    /// `walkChildren` over children the caller has already read.
+    static func walkChildren(
+        of element: AXUIElement,
+        from children: [AXUIElement],
+        runtime: Runtime
+    ) -> [AXUIElement] {
+        guard children.count > walkRowContainerLimit,
+              let role = getRole(element, runtime: runtime),
+              walkRowContainerRoles.contains(role) else {
+            return children
+        }
+        logPrunedRowContainer(role: role, childCount: children.count)
+        return []
+    }
+
+    /// `walkChildren` for a status-preserving walk. A role read that fails with anything other than
+    /// an absence is the walk's failure, like every other read it makes.
+    static func walkChildrenResult(
+        of element: AXUIElement,
+        from children: [AXUIElement],
+        runtime: Runtime
+    ) -> Result<[AXUIElement], AXStatusError> {
+        guard children.count > walkRowContainerLimit else { return .success(children) }
+        switch stringAttributeResult(element, kAXRoleAttribute as String, runtime: runtime) {
+        case let .success(role?) where walkRowContainerRoles.contains(role):
+            logPrunedRowContainer(role: role, childCount: children.count)
+            return .success([])
+        case .success:
+            return .success(children)
+        case let .failure(error):
+            return .failure(error)
+        }
+    }
+
+    private static func logPrunedRowContainer(role: String, childCount: Int) {
+        Log.debug("walk does not descend into an \(role) with \(childCount) children", subsystem: "ax")
     }
 
     /// Get the number of children without allocating the full array.

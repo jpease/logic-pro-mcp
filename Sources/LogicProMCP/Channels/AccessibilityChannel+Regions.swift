@@ -57,7 +57,8 @@ extension AccessibilityChannel {
                     layoutItems: result.layoutItemCount,
                     nonRegion: result.nonRegionCount,
                     trackHeaders: result.trackHeaderCount,
-                    trackHeadersInViewport: result.trackHeadersWithinViewport
+                    trackHeadersInViewport: result.trackHeadersWithinViewport,
+                    unreadableContentMembers: result.unreadableContentMembers
                 )
             ))
         }
@@ -87,8 +88,12 @@ extension AccessibilityChannel {
         /// models exactly that shape and caught it.
         let regionItemsOutsideViewport: Int
 
-        /// The enumeration saw the whole arrangement: every track was in view AND no region was
-        /// dropped for being outside it.
+        /// Members of the Track Content group that did not read (see
+        /// `AXHelpers.childrenMemberwise`). One of them may hold a region, so any is incompleteness.
+        var unreadableContentMembers = 0
+
+        /// The enumeration saw the whole arrangement: every track was in view, no region was
+        /// dropped for being outside it, and every member of the Track Content group read.
         ///
         /// Zero headers is NOT complete: with nothing to bound the claim there is nothing to have
         /// covered, and reporting completeness there would make an unreadable arrangement look
@@ -97,6 +102,7 @@ extension AccessibilityChannel {
             trackHeaderCount > 0
                 && trackHeadersWithinViewport == trackHeaderCount
                 && regionItemsOutsideViewport == 0
+                && unreadableContentMembers == 0
         }
     }
 
@@ -223,9 +229,23 @@ extension AccessibilityChannel {
             return (pair.offset, p.y + s.height / 2)
         }
 
-        let items = AXHelpers.findAllDescendants(
-            of: content, role: "AXLayoutItem", maxDepth: 10, runtime: runtime.ax
-        )
+        // Logic 13 puts one lane per track under this group, and its AXChildren read fails as a
+        // whole when one member cannot be vended, so the members are read one at a time then.
+        let contentMembers: AXHelpers.MemberwiseChildren
+        switch AXHelpers.childrenMemberwise(content, runtime: runtime.ax) {
+        case let .success(read):
+            contentMembers = read
+        case .failure:
+            // Nothing read, so at least one member is unaccounted for.
+            contentMembers = AXHelpers.MemberwiseChildren(members: [], unreadable: 1)
+        }
+        let layoutItemRole = kAXLayoutItemRole as String
+        let items = contentMembers.members.flatMap { member -> [AXUIElement] in
+            let own = AXHelpers.getRole(member, runtime: runtime.ax) == layoutItemRole ? [member] : []
+            return own + AXHelpers.findAllDescendants(
+                of: member, role: layoutItemRole, maxDepth: 9, runtime: runtime.ax
+            )
+        }
         var regions: [(item: AXUIElement, info: RegionInfo)] = []
         var nonRegionCount = 0
         var regionItemsOutsideViewport = 0
@@ -271,7 +291,8 @@ extension AccessibilityChannel {
             trackHeadersWithinViewport: headers.filter {
                 headerIsWithinViewport($0, within: window, runtime: runtime.ax)
             }.count,
-            regionItemsOutsideViewport: regionItemsOutsideViewport
+            regionItemsOutsideViewport: regionItemsOutsideViewport,
+            unreadableContentMembers: contentMembers.unreadable
         ))
     }
 

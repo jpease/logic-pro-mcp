@@ -78,7 +78,11 @@ import sys
 # The rule now requires the count to GUARD the reduction. 54 is what the tightened detector sees, and
 # it is still one below the 55 this started at, because two sites really are count-guarded. The bar
 # falls by what was actually gained and not by what a loose regex hid.
-BLIND_SITE_BUDGET = 52
+#
+# 52 -> 51 (2026-11-05). No lookup changed. `AXHelpers.findDescendant`'s own recursive call was
+# counted as a site; it now recurses through a private helper so the walk can tell its root from
+# the rest (Logic 13's Browser panel), and the line the detector matched is gone.
+BLIND_SITE_BUDGET = 51
 
 SEARCH_ROOTS = ("Sources", "Scripts")
 

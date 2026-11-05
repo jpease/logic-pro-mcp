@@ -2132,6 +2132,16 @@ enum AXLocalePolicy {
         derivedFrom: "logic-canon://strings/Contents%2FFrameworks%2FLogic.framework%2FVersions%2FA%2FResources%2FLocalizable.strings/en/StrTabBtnLabel%7C%7C%7CMixer#value"
     )
 
+    /// The Browser panel's description, on the arrange window's direct child that holds it.
+    static let browserPanelLabel = LabelSet(
+        canonical: "Browser",
+        variants: ["브라우저", "ブラウザ", "Explorador", "Navigateur", "Navegador", "浏览器", "瀏覽器"],
+        rationale: "Identifies the Browser panel so descendant walks from the arrange window skip it; read-only classifier."
+            + " Logic 13 replaced the Library panel with a Browser whose results table vends every result as a row; read live on Logic 13.0 (en) on 2026-11-05, the window's direct child AXGroup is described `Browser` and its table had 6,219 children."
+            + " Logic 13.0's own Localizable.strings carries `StrTabBtnLabel|||Browser` with the same values the pinned 12.3 corpus holds (read 2026-11-05 for en, ko, de and fr). Only en was read off a running Logic. Checked offline by Scripts/check-labelsets-are-derived.py.",
+        derivedFrom: "logic-canon://strings/Contents%2FFrameworks%2FLogic.framework%2FVersions%2FA%2FResources%2FLocalizable.strings/en/StrTabBtnLabel%7C%7C%7CBrowser#value"
+    )
+
     /// Slider type hints (mutually exclusive groups in `sliderText`).
     static let sliderSendHint = LabelSet(
         canonical: "send",
@@ -3261,6 +3271,7 @@ enum AXLocalePolicy {
         transportSliderHints,
         mixerInspectorContext,
         mixerNamedElement,
+        browserPanelLabel,
         sliderSendHint,
         sliderZoomHint,
         sliderVolumeHint,
