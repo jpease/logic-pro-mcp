@@ -334,13 +334,29 @@ extension AccessibilityChannel {
         }
         await pause(browserResultsSettleNanoseconds)
 
-        guard let table = element({ AXHelpers.getRole($0, runtime: ax) == (kAXTableRole as String) }) else {
+        guard var table = element({ AXHelpers.getRole($0, runtime: ax) == (kAXTableRole as String) }) else {
             return await refuse(.elementNotFound, "The Browser's results table was not found")
         }
-        let rows = AXHelpers.getChildren(table, runtime: ax).filter {
+        var rows = AXHelpers.getChildren(table, runtime: ax).filter {
             AXHelpers.getRole($0, runtime: ax) == (kAXRowRole as String)
         }
-        let hits = rows.filter { browserRowName($0, runtime: ax) == preset }
+        var hits = rows.filter { browserRowName($0, runtime: ax) == preset }
+        // Fork-local: the search ranks by meaning and returns at most 1,000 rows, and an exact
+        // patch name can fall outside them ('Deluxe Classic', measured 2026-11-05). The unfiltered
+        // Instruments list holds every patch, so scan it when the search misses.
+        if hits.isEmpty,
+           let clear = element({ AXHelpers.getDescription($0, runtime: ax) == "Remove All Active Filters" }) {
+            AXHelpers.performAction(clear, kAXPressAction as String, runtime: ax)
+            await pause(browserResultsSettleNanoseconds * 2)
+            if let full = element({ AXHelpers.getRole($0, runtime: ax) == (kAXTableRole as String) }) {
+                table = full
+                rows = AXHelpers.getChildren(table, runtime: ax).filter {
+                    AXHelpers.getRole($0, runtime: ax) == (kAXRowRole as String)
+                }
+                hits = rows.filter { browserRowName($0, runtime: ax) == preset }
+                extras["browser_unfiltered_scan"] = true
+            }
+        }
         extras["browser_result_rows"] = rows.count
         extras["browser_exact_matches"] = hits.count
         // Rows show a name and nothing else, so the path's category prefix is not checked.
