@@ -133,9 +133,12 @@ extension AXLogicProElements {
                 kAXSelectedChildrenAttribute as CFString,
                 arr
             )
-            // Logic 13 accepts this write without moving the selection, so trust it only
-            // when the header reads back as selected.
-            if r == .success && headerReadsSelected(header) { return true }
+            // Logic 13 accepts this write without moving the selection, so trust it only when
+            // the header reads back as selected. When the write is accepted but does not stick,
+            // the AXPress steps below would only report vacuous success, so click instead.
+            if r == .success {
+                return headerReadsSelected(header) || clickHeaderLeftEdge(header)
+            }
         }
 
         // Step 2 — NSTableRow-style AXSelected=true (test-double path).
@@ -184,7 +187,8 @@ extension AXLogicProElements {
     }
 
     private static func headerReadsSelected(_ header: AXUIElement) -> Bool {
-        usleep(150_000)
+        // Logic 13 can report the written selection briefly before reverting it.
+        usleep(600_000)
         var value: CFTypeRef?
         guard AXUIElementCopyAttributeValue(header, "AXSelected" as CFString, &value) == .success else { return false }
         return (value as? Bool) == true
