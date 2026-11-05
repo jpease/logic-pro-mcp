@@ -1,4 +1,5 @@
 import ApplicationServices
+import AppKit
 import Foundation
 
 
@@ -132,7 +133,9 @@ extension AXLogicProElements {
                 kAXSelectedChildrenAttribute as CFString,
                 arr
             )
-            if r == .success { return true }
+            // Logic 13 accepts this write without moving the selection, so trust it only
+            // when the header reads back as selected.
+            if r == .success && headerReadsSelected(header) { return true }
         }
 
         // Step 2 — NSTableRow-style AXSelected=true (test-double path).
@@ -173,13 +176,41 @@ extension AXLogicProElements {
             }
         }
 
-        // ADR-001 coordinate ban: the former Step 5 (element-derived HID click on
-        // the header's name area) is removed. Step 1 (AXSelectedChildren on the
-        // parent group) is the live-verified primary that actually moves Logic's
-        // selection (v3.0.9, 10/10 indices on a 10-track project), and
-        // `track.select` also routes to the MCU channel — so failing closed here
-        // preserves function without a coordinate fallback.
-        return false
+        // Step 5 — Logic 13 fallback (fork-local, outside upstream's ADR-001 coordinate ban):
+        // none of the AX writes above moves the selection on Logic 13.0, but a click on the
+        // header's left edge, clear of its buttons and name field, does (measured 2026-11-05).
+        // It needs Logic frontmost, so it activates Logic first.
+        return clickHeaderLeftEdge(header)
+    }
+
+    private static func headerReadsSelected(_ header: AXUIElement) -> Bool {
+        usleep(150_000)
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(header, "AXSelected" as CFString, &value) == .success else { return false }
+        return (value as? Bool) == true
+    }
+
+    private static func clickHeaderLeftEdge(_ header: AXUIElement) -> Bool {
+        var posRef: CFTypeRef?
+        var sizeRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(header, kAXPositionAttribute as CFString, &posRef) == .success,
+              AXUIElementCopyAttributeValue(header, kAXSizeAttribute as CFString, &sizeRef) == .success,
+              let posValue = posRef, let sizeValue = sizeRef else { return false }
+        var origin = CGPoint.zero
+        var size = CGSize.zero
+        guard AXValueGetValue(posValue as! AXValue, .cgPoint, &origin),
+              AXValueGetValue(sizeValue as! AXValue, .cgSize, &size),
+              size.width > 12, size.height > 0 else { return false }
+        guard let logic = NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.logic10").first else { return false }
+        logic.activate()
+        usleep(300_000)
+        let point = CGPoint(x: origin.x + 6, y: origin.y + size.height / 2)
+        for type in [CGEventType.leftMouseDown, .leftMouseUp] {
+            guard let event = CGEvent(mouseEventSource: nil, mouseType: type, mouseCursorPosition: point, mouseButton: .left) else { return false }
+            event.post(tap: .cghidEventTap)
+            usleep(60_000)
+        }
+        return headerReadsSelected(header)
     }
 
     /// Enumerate all track header rows.
