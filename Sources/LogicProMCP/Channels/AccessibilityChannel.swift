@@ -410,12 +410,15 @@ actor AccessibilityChannel: Channel {
             // in-request read fixes it and an earlier one does not. Do not delete this as a
             // pointless warm-up without reproducing that pair first.
             _ = runtime.transportState()
-            // The dialog route below brings Logic forward and types the position; the render path
-            // does neither, so it steps the control bar's position sliders instead.
-            if FocusFreeRenderPath.isActive {
-                return AccessibilityChannel.gotoPositionViaControlBarSteps(
-                    params: params, runtime: runtime.logicRuntime
-                )
+            // The dialog route below brings Logic forward and types the position through System
+            // Events; the render path does neither, so it steps the control bar's position sliders
+            // instead. Fork-local: try the stepper first everywhere, since it needs neither focus nor
+            // System Events, and keep the dialog route as the fallback when the stepper refuses.
+            let stepped = AccessibilityChannel.gotoPositionViaControlBarSteps(
+                params: params, runtime: runtime.logicRuntime
+            )
+            if FocusFreeRenderPath.isActive || stepped.isSuccess {
+                return stepped
             }
             return await AccessibilityChannel.gotoPositionViaBarSlider(
                 params: params, runtime: runtime.logicRuntime
