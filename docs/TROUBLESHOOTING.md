@@ -143,7 +143,11 @@ Logic 13 moved the transport and the Transport Display into a toolbar; the only 
 
 ### A render-path command answers `refused_by: "focus_free_render_path"`
 
-`record_sequence`, `set_instrument`, `get_regions`, `export_run`, track `delete` and `goto_position` never bring Logic forward, type, or click, because they run while you type in other apps. A step that would need one of those is refused with State C `not_supported` and `refused_action` naming it; nothing was written. `record_sequence` and `set_instrument` have no focus-free route yet and refuse every time; `export_run` refuses non-stem artifacts, whose bounce helper types into the Bounce save panel. `goto_position` steps the control bar instead of opening Go To Position; if it refuses with `unsupported_state`, stop playback first, and if it refuses because subdivision or tick must move, switch the control bar's display mode to Beats.
+With `LOGIC_PRO_MCP_FOCUS_FREE_RENDER=1` in the server's environment, `record_sequence`, `set_instrument`, `get_regions`, `export_run`, track `delete` and `goto_position` never bring Logic forward, type, or click, so they can run while you type in other apps. A step that would need one of those is refused with State C `not_supported` and `refused_action` naming it; nothing was written. `record_sequence` has no focus-free route and refuses every time; `set_instrument` refuses on Logic 12, whose Library route needs synthetic input (Logic 13's Browser route needs none); `export_run` refuses non-stem artifacts, whose bounce helper types into the Bounce save panel. `goto_position` steps the control bar instead of opening Go To Position; if it refuses with `unsupported_state`, stop playback first, and if it refuses because subdivision or tick must move, switch the control bar's display mode to Beats. Unset the variable for renders that run with nobody at the keyboard.
+
+### Logic Pro 13: `set_instrument` refuses with `path_not_in_library` or `ambiguous_target_name`
+
+On Logic 13 `set_instrument` searches the Browser's Instruments for the patch's leaf name and loads only a result with exactly that name. `path_not_in_library` with `precondition: "browser_no_exact_match"` means no result had it; check the spelling against the Browser. `ambiguous_target_name` means several results share the name; Browser results show no category, so the route cannot choose between them.
 
 ## MCU and Mixer
 
