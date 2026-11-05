@@ -48,6 +48,7 @@ enum AXLogicProElements {
         }
 
         static let livePostPopupMenuEscape: @Sendable () -> Void = {
+            guard !FocusFreeRenderPath.refuses("a synthetic Escape to close a popup menu") else { return }
             let source = CGEventSource(stateID: .hidSystemState)
             let down = CGEvent(keyboardEventSource: source, virtualKey: 53, keyDown: true)
             let up = CGEvent(keyboardEventSource: source, virtualKey: 53, keyDown: false)

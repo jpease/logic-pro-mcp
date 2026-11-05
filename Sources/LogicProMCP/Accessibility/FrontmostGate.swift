@@ -43,6 +43,10 @@ enum FrontmostGate {
         if consecutiveObservations(isFrontmost: isFrontmost, sleepMicros: sleepMicros) >= requiredObservations {
             return .alreadyFrontmost
         }
+        // The render path never brings Logic forward (`FocusFreeRenderPath`).
+        guard !FocusFreeRenderPath.refuses("activating Logic for a UI actuation") else {
+            return .activationRefused
+        }
         guard activate() else { return .activationRefused }
         for _ in 0..<maximumActivationPolls {
             sleepMicros(activationPollMicros)

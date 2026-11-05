@@ -147,7 +147,10 @@ enum AXMouseHelper {
         }
 
         static let production = Runtime(
+            // Each poster refuses on the render path (`FocusFreeRenderPath`); callers that hold a
+            // runtime reach these closures without going through the helpers below.
             postMouseEvent: { type, point, clickCount in
+                guard !FocusFreeRenderPath.refuses("a synthetic mouse event") else { return false }
                 let source = CGEventSource(stateID: .combinedSessionState)
                 guard let event = CGEvent(
                     mouseEventSource: source,
@@ -160,6 +163,7 @@ enum AXMouseHelper {
                 return true
             },
             postKeyEvent: { keyCode in
+                guard !FocusFreeRenderPath.refuses("a synthetic keystroke") else { return false }
                 let source = CGEventSource(stateID: .combinedSessionState)
                 guard let events = keyboardEvents(
                     source: source,
@@ -171,6 +175,7 @@ enum AXMouseHelper {
                 return true
             },
             postUnicodeScalar: { scalar in
+                guard !FocusFreeRenderPath.refuses("a synthetic keystroke") else { return false }
                 let source = CGEventSource(stateID: .combinedSessionState)
                 guard let events = keyboardEvents(
                     source: source,
@@ -186,6 +191,7 @@ enum AXMouseHelper {
             },
             sleepMicros: { usleep($0) },
             postFlaggedKeyEvent: { keyCode, flags in
+                guard !FocusFreeRenderPath.refuses("a synthetic key chord") else { return false }
                 let source = CGEventSource(stateID: .combinedSessionState)
                 return postChord(
                     keyCode: keyCode,
@@ -213,6 +219,7 @@ enum AXMouseHelper {
     /// callers can fall back to another injector on failure.
     @discardableResult
     static func doubleClick(at point: CGPoint, runtime: Runtime = .production) -> Bool {
+        guard !FocusFreeRenderPath.refuses("a synthetic double-click") else { return false }
         let down1 = runtime.postMouseEvent(.leftMouseDown, point, 1)
         let up1 = runtime.postMouseEvent(.leftMouseUp, point, 1)
 
@@ -228,6 +235,7 @@ enum AXMouseHelper {
     /// Post a single native left-click at the screen point.
     @discardableResult
     static func click(at point: CGPoint, runtime: Runtime = .production) -> Bool {
+        guard !FocusFreeRenderPath.refuses("a synthetic click") else { return false }
         let down = runtime.postMouseEvent(.leftMouseDown, point, 1)
         runtime.sleepMicros(20_000)
         let up = runtime.postMouseEvent(.leftMouseUp, point, 1)
@@ -256,6 +264,7 @@ enum AXMouseHelper {
         runtime: Runtime = .production,
         isCancelled: () -> Bool = { false }
     ) -> Bool {
+        guard !FocusFreeRenderPath.refuses("typing text") else { return false }
         for codeUnit in s.utf16 {
             if isCancelled() { return false }
             _ = runtime.postUnicodeScalar(codeUnit)
@@ -275,6 +284,7 @@ enum AXMouseHelper {
     }
 
     private static func postKey(_ keyCode: CGKeyCode, runtime: Runtime) {
+        guard !FocusFreeRenderPath.refuses("a synthetic keystroke") else { return }
         _ = runtime.postKeyEvent(keyCode)
     }
 

@@ -483,7 +483,13 @@ actor AppleScriptChannel: Channel {
         _ source: String,
         timeout: TimeInterval = ServerConfig.appleScriptTimeout
     ) async -> ChannelResult {
-        await Task.detached(priority: .userInitiated) {
+        // Checked before the detached task: the render-path flag is task-local and a detached task
+        // does not inherit it.
+        if FocusFreeRenderPath.scriptNeedsFocus(source),
+           FocusFreeRenderPath.refuses("an AppleScript that types or brings an app forward") {
+            return .error(FocusFreeRenderPath.refusal("an AppleScript that types or brings an app forward"))
+        }
+        return await Task.detached(priority: .userInitiated) {
             let execution = BoundedProcessRunner.run(
                 executable: "/usr/bin/osascript",
                 arguments: appleScriptArguments(for: source),

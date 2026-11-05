@@ -866,9 +866,12 @@ actor LogicProServer {
                     return heldMutationGate.stillOwns(heldClaim)
                 }
             )
+            let focusFree = FocusFreeRenderPath.covers(tool: tool, command: command)
             let workTask = Task.detached(priority: .userInitiated) {
                 let result = await OperationTraceContext.$current.withValue(traceContext) {
-                    await work()
+                    await FocusFreeRenderPath.$isActive.withValue(focusFree) {
+                        await work()
+                    }
                 }
                 if let heldClaim { heldMutationGate?.release(heldClaim) }
                 let didWin = race.resume(continuation, returning: result)

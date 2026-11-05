@@ -2055,6 +2055,7 @@ extension AccessibilityChannel {
     /// Track creation deliberately does not call it: Return has no AX-bound
     /// target and can activate an unrelated default button.
     static func sendReturnKey() {
+        guard !FocusFreeRenderPath.refuses("a synthetic Return") else { return }
         guard let src = CGEventSource(stateID: .hidSystemState) else { return }
         let returnVK: CGKeyCode = 0x24
         if let down = CGEvent(keyboardEventSource: src, virtualKey: returnVK, keyDown: true) {

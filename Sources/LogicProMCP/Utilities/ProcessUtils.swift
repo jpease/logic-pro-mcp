@@ -27,6 +27,9 @@ enum ProcessUtils {
                     || ProcessUtils.logicProPIDViaProcessList() != nil
             },
             activateLogicPro: {
+                // Callers on the render path reach this closure directly, not only through
+                // `activateLogicPro(runtime:)`.
+                guard !FocusFreeRenderPath.refuses("activating Logic") else { return false }
                 guard let app = ProcessUtils.logicProApp() else {
                     return ProcessUtils.activateLogicProViaAppleScript()
                 }
@@ -222,8 +225,10 @@ enum ProcessUtils {
         activateLogicPro(runtime: .production)
     }
 
+    /// Refused on the render path (`FocusFreeRenderPath`): answers `false` without activating.
     static func activateLogicPro(runtime: Runtime) -> Bool {
-        runtime.activateLogicPro()
+        guard !FocusFreeRenderPath.refuses("activating Logic") else { return false }
+        return runtime.activateLogicPro()
     }
 
     static func logicProVersion() -> String? {

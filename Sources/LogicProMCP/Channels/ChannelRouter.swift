@@ -173,6 +173,11 @@ actor ChannelRouter {
                 Log.debug("Channel \(channelID.rawValue) not registered, skipping", subsystem: "router")
                 continue
             }
+            // The CGEvent channel posts global input; the render path does not (`FocusFreeRenderPath`).
+            if channelID == .cgEvent, FocusFreeRenderPath.refuses("the CGEvent channel for \(operation)") {
+                lastError = FocusFreeRenderPath.refusal("the CGEvent channel for \(operation)")
+                continue
+            }
 
             let health = await channel.healthCheck()
             guard health.available else {
