@@ -62,7 +62,7 @@ extension FocusFreeRenderPathTests {
         init(
             values: [TransportPositionComponent: Int],
             playing: Bool = false,
-            advertisedActions: [String] = [kAXIncrementAction as String, kAXDecrementAction as String]
+            valueSettable: Bool = true
         ) {
             let browserToggle = builder.element(904)
             let playGroup = builder.element(905)
@@ -107,7 +107,10 @@ extension FocusFreeRenderPathTests {
                 builder.setRole(slider, kAXSliderRole as String)
                 builder.setAttribute(slider, kAXDescriptionAttribute as String, labels[component]!)
                 builder.setAttribute(slider, kAXValueAttribute as String, value)
-                builder.setActionNames(slider, advertisedActions)
+                // Logic 13.0 advertises both; the stepper must not use them (one AXIncrement moved
+                // the bar slider ten bars).
+                builder.setActionNames(slider, [kAXIncrementAction as String, kAXDecrementAction as String])
+                builder.setAttributeSettable(slider, kAXValueAttribute as String, valueSettable)
                 sliders[component] = slider
                 ordered.append(slider)
             }
@@ -121,22 +124,30 @@ extension FocusFreeRenderPathTests {
             return (builder.attributeValue(slider, kAXValueAttribute as String) as? Int)
         }
 
+        /// The slider of `element`, if it is one.
+        private func component(of element: AXUIElement) -> TransportPositionComponent? {
+            sliders.first { builder.elementID($0.value) == builder.elementID(element) }?.key
+        }
+
         func runtime() -> AXLogicProElements.Runtime {
             builder.makeLogicRuntime(
                 appElement: app,
-                setAttributeHandler: nil,
-                performActionHandler: { [self] element, action in
-                    guard let component = sliders.first(where: {
-                        builder.elementID($0.value) == builder.elementID(element)
-                    })?.key, let now = value(component) else { return false }
-                    lock.lock(); actions.append("\(component.rawValue):\(action)"); lock.unlock()
-                    let step = stepSize[component] ?? 1
-                    if action == kAXIncrementAction as String {
-                        builder.setAttribute(element, kAXValueAttribute as String, now + step)
-                    } else if action == kAXDecrementAction as String {
-                        builder.setAttribute(element, kAXValueAttribute as String, now - step)
-                    }
+                // Logic 13.0: a slider's range is its value ± 1 and a write outside it clamps.
+                setAttributeHandler: { [self] element, attribute, value in
+                    guard attribute == kAXValueAttribute as String,
+                          let component = component(of: element), let now = self.value(component),
+                          let written = (value as? NSNumber)?.intValue else { return false }
+                    lock.lock(); actions.append("\(component.rawValue)=\(written)"); lock.unlock()
+                    let clamped = min(max(written, now - 1), now + 1)
+                    let moved = (clamped - now) * (stepSize[component] ?? 1)
+                    builder.setAttribute(element, kAXValueAttribute as String, now + moved)
                     return true
+                },
+                performActionHandler: { [self] element, action in
+                    if let component = component(of: element) {
+                        lock.lock(); actions.append("\(component.rawValue):\(action)"); lock.unlock()
+                    }
+                    return false
                 },
                 executeAppleScript: FocusFreeRenderPathTests.failingAppleScript(appleScripts)
             )
@@ -172,10 +183,8 @@ extension FocusFreeRenderPathTests {
         #expect(payload["observed_before"] as? String == "3.2")
         #expect(payload["unobserved_position_components"] as? [String] == ["subdivision", "tick"])
         #expect(payload["steps"] as? Int == 3)
-        #expect(fixture.performedActions == [
-            "bar:AXDecrement", "bar:AXDecrement", "beat:AXDecrement",
-        ])
-        #expect(fixture.builder.setCalls.isEmpty, "no slider AXValue may be written")
+        // One write of the neighbouring value per step; never AXIncrement / AXDecrement.
+        #expect(fixture.performedActions == ["bar=2", "bar=1", "beat=1"])
     }
 
     @Test func gotoWithAllFourComponentsShownIsStateA() async {
@@ -207,7 +216,7 @@ extension FocusFreeRenderPathTests {
         #expect(payload["write_attempted"] as? Bool == true)
         #expect(payload["observed"] as? String == "3.1")
         #expect(HonestContract.isFallbackUnsafeStateC(result.message))
-        #expect(fixture.performedActions == ["bar:AXDecrement"])
+        #expect(fixture.performedActions == ["bar=4"])
     }
 
     @Test func aHiddenComponentThatMustMoveIsRefusedBeforeAnyStep() async {
@@ -234,8 +243,8 @@ extension FocusFreeRenderPathTests {
         #expect(fixture.performedActions.isEmpty)
     }
 
-    @Test func aSliderWithoutStepActionsIsRefusedBeforeAnyStep() async {
-        let fixture = ControlBarFixture(values: [.bar: 3, .beat: 2], advertisedActions: [])
+    @Test func aSliderWhoseValueIsNotSettableIsRefusedBeforeAnyStep() async {
+        let fixture = ControlBarFixture(values: [.bar: 3, .beat: 2], valueSettable: false)
         let (result, _) = await Self.onRenderPath {
             AccessibilityChannel.gotoPositionViaControlBarSteps(
                 params: ["bar": "1"], runtime: fixture.runtime(), sleepMicros: { _ in }
@@ -243,8 +252,22 @@ extension FocusFreeRenderPathTests {
         }
         let payload = Self.decode(result.message)
         #expect(payload["error"] as? String == "not_supported")
-        #expect(payload["missing_action"] as? String == kAXDecrementAction as String)
+        #expect(payload["value_settable"] as? Bool == false)
+        #expect(payload["component"] as? String == "bar")
         #expect(fixture.performedActions.isEmpty)
+    }
+
+    /// Each step writes the neighbouring value, up for the bar and down for the beat.
+    @Test func gotoWritesTheNeighbouringValueEachStep() async {
+        let fixture = ControlBarFixture(values: [.bar: 7, .beat: 4])
+        let (result, refusals) = await Self.onRenderPath {
+            AccessibilityChannel.gotoPositionViaControlBarSteps(
+                params: ["position": "9.1.1.1"], runtime: fixture.runtime(), sleepMicros: { _ in }
+            )
+        }
+        #expect(refusals.isEmpty)
+        #expect(Self.decode(result.message)["observed"] as? String == "9.1")
+        #expect(fixture.performedActions == ["bar=8", "bar=9", "beat=3", "beat=2", "beat=1"])
     }
 
     @Test func tooManyStepsAreRefusedBeforeAnyStep() async {

@@ -2,21 +2,24 @@ import ApplicationServices
 import Foundation
 
 /// `transport.goto_position` on the render path (`FocusFreeRenderPath`): move the playhead by
-/// stepping the control bar's Playhead Position sliders with `AXIncrement` / `AXDecrement`,
-/// reading every component back after every step.
+/// stepping the control bar's Playhead Position sliders one unit at a time, writing `AXValue` =
+/// current ± 1, and reading every component back after every step.
 ///
 /// The Go To Position dialog route needs Logic frontmost and types the position, so the render
-/// path cannot use it. Writing a slider's `AXValue` is not used either: on Logic 12.3 a write of
-/// 37 to the `bar` slider moved the playhead one bar (ed3d9c4d). A step is accepted only when the
-/// stepped component moved by exactly one in the requested direction and every other visible
-/// component stayed put; anything else stops the walk and reports where the playhead is.
+/// path cannot use it. Each slider's range is its own value ± 1 (Logic 13.0, read 2026-11-05: bar
+/// 106 reports `AXMinValue` 105 and `AXMaxValue` 107) and a write outside it clamps, so a step is
+/// one write of the neighbouring value; a write of 3 to bar 106 landed on 105, and on Logic 12.3 a
+/// write of 37 moved the playhead one bar (ed3d9c4d). `AXIncrement` is not used: on Logic 13.0 one
+/// increment moved the bar slider ten bars. A step is accepted only when the stepped component
+/// moved by exactly one in the requested direction and every other visible component stayed put;
+/// anything else stops the walk and reports where the playhead is.
 ///
 /// Components the display mode does not show (subdivision and tick in Beats & Project) are not
 /// moved and not claimed: the result is State B with them listed as unobserved, and a request
 /// that needs one of them moved is refused before any step.
 extension AccessibilityChannel {
     /// Upper bound on steps for one request, checked before the first step. Each step is one AX
-    /// action plus a readback, so this keeps a request inside the 25 s goto deadline.
+    /// write plus a readback, so this keeps a request inside the 25 s goto deadline.
     static let controlBarLocateMaxSteps = 400
 
     static func gotoPositionViaControlBarSteps(
@@ -126,12 +129,11 @@ extension AccessibilityChannel {
         for component in driven {
             guard let slider = sliders[component], let goal = target[component], let now = before[component],
                   goal != now else { continue }
-            let action = goal > now ? kAXIncrementAction as String : kAXDecrementAction as String
-            guard AXHelpers.getActionNames(slider, runtime: runtime.ax).contains(action) else {
+            guard AXHelpers.isAttributeSettable(slider, kAXValueAttribute as String, runtime: runtime.ax) == true else {
                 return refuse(
                     .notSupported,
-                    "The \(component.rawValue) slider does not offer \(action); nothing was touched.",
-                    ["missing_action": action, "component": component.rawValue]
+                    "The \(component.rawValue) slider's value is not settable; nothing was touched.",
+                    ["value_settable": false, "component": component.rawValue]
                 )
             }
         }
@@ -144,8 +146,8 @@ extension AccessibilityChannel {
                 let up = goal > now
                 var expected = current
                 expected[component] = now + (up ? 1 : -1)
-                let accepted = AXHelpers.performAction(
-                    slider, up ? kAXIncrementAction : kAXDecrementAction, runtime: runtime.ax
+                let accepted = AXHelpers.setAttribute(
+                    slider, kAXValueAttribute as String, NSNumber(value: now + (up ? 1 : -1)), runtime: runtime.ax
                 )
                 steps += 1
                 var observed: [TransportPositionComponent: Int]?
@@ -164,7 +166,7 @@ extension AccessibilityChannel {
                         extras: extras.merging([
                             "steps": steps,
                             "failed_component": component.rawValue,
-                            "action_accepted": accepted,
+                            "write_accepted": accepted,
                             "expected": render(expected),
                             "observed": observed.map(render) ?? NSNull(),
                             "write_attempted": true,
