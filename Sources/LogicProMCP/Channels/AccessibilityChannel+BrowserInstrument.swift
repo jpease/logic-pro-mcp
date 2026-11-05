@@ -1,3 +1,4 @@
+import AppKit
 import ApplicationServices
 import Foundation
 
@@ -359,6 +360,14 @@ extension AccessibilityChannel {
             )
         }
 
+        // The Browser remembers the last loaded row; selecting a row that is already selected
+        // changes nothing and loads nothing, so clear the selection first.
+        let alreadySelected: Bool? = AXHelpers.getAttribute(row, kAXSelectedAttribute as String, runtime: ax)
+        if alreadySelected == true {
+            _ = AXHelpers.setAttribute(table, kAXSelectedRowsAttribute as String, [] as CFArray, runtime: ax)
+            _ = AXHelpers.setAttribute(row, kAXSelectedAttribute as String, kCFBooleanFalse, runtime: ax)
+            await pause(browserPollNanoseconds)
+        }
         guard AXHelpers.setAttribute(row, kAXSelectedAttribute as String, kCFBooleanTrue, runtime: ax) else {
             return await refuse(
                 .axWriteFailed,
@@ -369,10 +378,18 @@ extension AccessibilityChannel {
 
         var observed = observedNames()
         var polls = 0
+        var commandReturnSent = false
         while !observed.contains(preset), polls < browserLoadPolls {
             await pause(browserPollNanoseconds)
             observed = observedNames()
             polls += 1
+            // Fork-local Logic 13 fallback: an AX row selection does not always load the patch
+            // (measured 2026-11-05). Command-Return in the focused results table loads the selected
+            // patch on the selected track; it needs Logic frontmost and sends a keystroke.
+            if !observed.contains(preset), !commandReturnSent, polls >= 3 {
+                commandReturnSent = true
+                extras["browser_command_return"] = sendCommandReturn(to: table)
+            }
         }
         let loaded = observed.contains(preset)
 
@@ -409,5 +426,20 @@ extension AccessibilityChannel {
             reason: reason,
             extras: final.merging(["readback_state": reason.rawValue]) { _, new in new }
         )))
+    }
+
+    private static func sendCommandReturn(to table: AXUIElement) -> Bool {
+        guard let logic = NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.logic10").first else { return false }
+        logic.activate()
+        usleep(300_000)
+        _ = AXUIElementSetAttributeValue(table, kAXFocusedAttribute as CFString, kCFBooleanTrue)
+        usleep(300_000)
+        for down in [true, false] {
+            guard let event = CGEvent(keyboardEventSource: nil, virtualKey: 36, keyDown: down) else { return false }
+            event.flags = .maskCommand
+            event.post(tap: .cghidEventTap)
+            usleep(50_000)
+        }
+        return true
     }
 }
