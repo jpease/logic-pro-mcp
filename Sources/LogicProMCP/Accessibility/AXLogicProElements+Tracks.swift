@@ -687,6 +687,26 @@ extension AXLogicProElements {
             }
     }
 
+    /// The names Logic renders for the track at `index`: the name field's `AXDescription`, and
+    /// the quoted name in the header's own description (`Track 4 “Studio Grand”` on Logic 13.0,
+    /// where the name field's `AXValue` reads "0"). Never the field's `AXValue`, which echoes a
+    /// write whether or not Logic committed it.
+    static func renderedTrackNames(at index: Int, runtime: Runtime = .production) -> [String] {
+        guard let header = findTrackHeader(at: index, runtime: runtime) else { return [] }
+        var names: [String] = []
+        if let field = trackNameField(in: header, runtime: runtime),
+           let description = AXHelpers.getDescription(field, runtime: runtime.ax)?
+               .trimmingCharacters(in: .whitespacesAndNewlines),
+           !description.isEmpty, description != "0" {
+            names.append(description)
+        }
+        if let description = AXHelpers.getDescription(header, runtime: runtime.ax),
+           let quoted = AXValueExtractors.extractQuotedTrackName(from: description) {
+            names.append(quoted)
+        }
+        return names
+    }
+
     /// Find the track name text field on a header.
     static func findTrackNameField(trackIndex: Int, runtime: Runtime = .production) -> AXUIElement? {
         guard let header = findTrackHeader(at: trackIndex, runtime: runtime) else { return nil }

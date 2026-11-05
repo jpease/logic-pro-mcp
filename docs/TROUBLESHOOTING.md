@@ -137,6 +137,14 @@ Logic 13's Browser panel exposes each search result to Accessibility, thousands 
 
 Logic 13 can fail the whole Track Content children read (`-25200`). Current builds read its members one at a time; `_debug.unreadable_content_members` above zero means some still did not read, and the response says `complete:false`.
 
+### Logic Pro 13: transport reads show no playhead position
+
+Logic 13 moved the transport and the Transport Display into a toolbar; the only group named Control Bar now holds the view toggles. Builds before this fix read that group, so `logic://transport/state` had no position and `goto_position` could never verify. Current builds read the toolbar when the group holds no transport control.
+
+### A render-path command answers `refused_by: "focus_free_render_path"`
+
+`record_sequence`, `set_instrument`, `get_regions`, `export_run`, track `delete` and `goto_position` never bring Logic forward, type, or click, because they run while you type in other apps. A step that would need one of those is refused with State C `not_supported` and `refused_action` naming it; nothing was written. `record_sequence` and `set_instrument` have no focus-free route yet and refuse every time; `export_run` refuses non-stem artifacts, whose bounce helper types into the Bounce save panel. `goto_position` steps the control bar instead of opening Go To Position; if it refuses with `unsupported_state`, stop playback first, and if it refuses because subdivision or tick must move, switch the control bar's display mode to Beats.
+
 ## MCU and Mixer
 
 ### Mixer writes return `channels_exhausted`

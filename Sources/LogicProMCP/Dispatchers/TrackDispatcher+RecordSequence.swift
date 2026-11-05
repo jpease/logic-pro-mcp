@@ -11,6 +11,9 @@ extension TrackDispatcher {
 
     // MARK: - record_sequence SMF-import implementation
 
+    static let recordSequenceImportFocusAction =
+        "importing the MIDI file, whose Open-panel route activates Logic and types the path"
+
     /// Generate a Standard MIDI File from the notes spec, write to a private temp dir,
     /// then import into the current project via AX menu navigation. Logic always
     /// creates a NEW MIDI track for the imported content (verified OQ-3).
@@ -79,6 +82,15 @@ extension TrackDispatcher {
         }
         guard await cache.getHasDocument() else {
             return toolTextResult("record_sequence: No project open", isError: true)
+        }
+        // The import (`defaultImportMIDIFile`) brings Logic forward and types the file path into
+        // its Open panel, which the render path (`FocusFreeRenderPath`) refuses. Refuse here,
+        // before the playhead reset moves anything, rather than after it.
+        if FocusFreeRenderPath.refuses(recordSequenceImportFocusAction) {
+            return toolTextResult(
+                FocusFreeRenderPath.refusal(recordSequenceImportFocusAction),
+                isError: true
+            )
         }
 
         let project = await cache.getProject()

@@ -672,6 +672,9 @@ extension AccessibilityChannel {
         }
     }
 
+    static let setInstrumentFocusAction =
+        "loading an instrument patch, whose Library route closes menus with Escape and falls back to synthetic clicks"
+
     static func setTrackInstrument(
         params: [String: String],
         runtime: AXLogicProElements.Runtime = .production,
@@ -725,6 +728,16 @@ extension AccessibilityChannel {
             requestedTrackIndex = index
         } else {
             requestedTrackIndex = nil
+        }
+
+        // The render path (`FocusFreeRenderPath`) has no route here yet, and a partial one is worse
+        // than none: the Library route opens the View menu by AXPress and closes it with a
+        // synthetic Escape, which the render path refuses, so a failed lookup would leave Logic's
+        // View menu open; its row picks fall back to synthetic clicks; and Logic 13 replaced the
+        // Library with the Browser, which this route does not know. Refused before anything is
+        // touched.
+        if FocusFreeRenderPath.refuses(setInstrumentFocusAction) {
+            return .error(FocusFreeRenderPath.refusal(setInstrumentFocusAction))
         }
 
         // v3.0.3+ — select target track via the Apple-public AX-first

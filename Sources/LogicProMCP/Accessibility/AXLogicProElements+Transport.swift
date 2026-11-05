@@ -282,11 +282,40 @@ extension AXLogicProElements {
         }
         // Exactly one, or nothing. Two bars that both hold transport controls is a tree this code
         // has never seen and must not guess about; the callers all fail closed on nil.
-        if withControls.count == 1 { return withControls[0] }
-        // No labelled candidate holds a control: fall back to a lone labelled group rather than
-        // regressing to first-of-many, so a Logic that renders the bar differently still resolves.
-        if withControls.isEmpty, labelled.count == 1 { return labelled[0] }
-        return nil
+        let chosen: AXUIElement?
+        if withControls.count == 1 {
+            chosen = withControls[0]
+        } else if withControls.isEmpty, labelled.count == 1 {
+            // No labelled candidate holds a control: fall back to a lone labelled group rather
+            // than regressing to first-of-many, so a Logic that renders the bar differently still
+            // resolves.
+            chosen = labelled[0]
+        } else {
+            chosen = nil
+        }
+        if let chosen,
+           !transportControlKeywordHits(in: chosen, runtime: runtime.ax).isEmpty {
+            return chosen
+        }
+        // Logic 13.0 (measured 2026-11-05): the transport, the Transport Display and every toggle
+        // live in an `AXToolbar` described `Control Bar`, a direct child of the window. The only
+        // `AXGroup` with that description holds the view toggles (Browser, Inspector, Mixer …) and
+        // no transport control, so the rule above chose it and every transport read came back
+        // empty. Taken only when the group lacks a transport control, which leaves 12.x unchanged.
+        return controlBarToolbar(in: window, runtime: runtime) ?? chosen
+    }
+
+    /// The window's one direct `AXToolbar` child described as the control bar that holds a
+    /// transport control, or nil when there is not exactly one.
+    private static func controlBarToolbar(in window: AXUIElement, runtime: Runtime) -> AXUIElement? {
+        let toolbars = AXHelpers.getChildren(window, runtime: runtime.ax).filter { child in
+            AXHelpers.getRole(child, runtime: runtime.ax) == kAXToolbarRole as String
+                && AXLocalePolicy.controlBarGroupLabel.matches(
+                    AXHelpers.getDescription(child, runtime: runtime.ax) ?? "", mode: .exactStrict
+                )
+                && !transportControlKeywordHits(in: child, runtime: runtime.ax).isEmpty
+        }
+        return toolbars.count == 1 ? toolbars[0] : nil
     }
 
     /// Find an AXCheckBox inside Logic Pro's control bar by its name.
@@ -417,6 +446,44 @@ extension AXLogicProElements {
         return componentSliders.first(where: {
             labels.matches(AXHelpers.getDescription($0, runtime: runtime.ax), mode: .exactStrict)
         })
+    }
+
+    /// The control bar's Playhead Position sliders by component: always `bar` and `beat`, plus
+    /// `subdivision` and `tick` when the display mode shows them (Beats & Project shows two,
+    /// Beats shows four). Nil when the group is not exactly one, when bar or beat is missing,
+    /// or when two sliders carry the same component label — a stepper must not guess which one
+    /// it is moving.
+    static func playheadPositionSliders(
+        runtime: Runtime = .production
+    ) -> [TransportPositionComponent: AXUIElement]? {
+        guard let controlBar = getControlBar(runtime: runtime) else { return nil }
+        let groups = AXHelpers.findAllDescendants(
+            of: controlBar, role: kAXGroupRole, maxDepth: 8, runtime: runtime.ax
+        ).filter {
+            AXLocalePolicy.playheadPositionGroupLabel.matches(
+                AXHelpers.getDescription($0, runtime: runtime.ax), mode: .exactStrict
+            )
+        }
+        guard groups.count == 1 else { return nil }
+        let labels: [(TransportPositionComponent, AXLocalePolicy.LabelSet)] = [
+            (.bar, AXLocalePolicy.barSliderLabel),
+            (.beat, AXLocalePolicy.beatSliderLabel),
+            (.subdivision, AXLocalePolicy.subdivisionSliderLabel),
+            (.tick, AXLocalePolicy.tickSliderLabel),
+        ]
+        var sliders: [TransportPositionComponent: AXUIElement] = [:]
+        for slider in AXHelpers.findAllDescendants(
+            of: groups[0], role: kAXSliderRole, maxDepth: 8, runtime: runtime.ax
+        ) {
+            let description = AXHelpers.getDescription(slider, runtime: runtime.ax)
+            guard let component = labels.first(where: {
+                $0.1.matches(description, mode: .exactStrict)
+            })?.0 else { continue }
+            guard sliders[component] == nil else { return nil }
+            sliders[component] = slider
+        }
+        guard sliders[.bar] != nil, sliders[.beat] != nil else { return nil }
+        return sliders
     }
 
     /// Find the 템포 / Tempo slider in Logic's control bar. Double-clicking

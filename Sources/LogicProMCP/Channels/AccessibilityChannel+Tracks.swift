@@ -658,8 +658,12 @@ extension AccessibilityChannel {
         // v3.0.3+ — activate Logic so the frontmost-dependent AX selection can
         // land, then go through the AX-native selection ladder (ADR-001: no
         // coordinate fallback — fail closed if every AX step is rejected).
-        _ = ProcessUtils.Runtime.production.activateLogicPro()
-        try? await Task.sleep(nanoseconds: 150_000_000)
+        // The render path (`FocusFreeRenderPath`, e.g. track delete) never activates: it selects
+        // through the AX ladder alone, and the readback below decides whether that landed.
+        if !FocusFreeRenderPath.isActive {
+            _ = ProcessUtils.Runtime.production.activateLogicPro()
+            try? await Task.sleep(nanoseconds: 150_000_000)
+        }
         guard AXLogicProElements.selectTrackViaAX(at: index, runtime: runtime) else {
             return .error(HonestContract.encodeStateC(
                 error: .axWriteFailed,
@@ -1701,6 +1705,9 @@ extension AccessibilityChannel {
         )
     }
 
+    /// Reads of the rendered name after the AX rename's confirm, 100 ms apart.
+    static let renameReadbackPolls = 5
+
     static func defaultRenameTrack(
         params: [String: String],
         runtime: AXLogicProElements.Runtime = .production,
@@ -1721,8 +1728,19 @@ extension AccessibilityChannel {
             AXLogicProElements.trackName(at: index, runtime: runtime)
         }
 
+        /// The rename landed when Logic renders the new name: the name field's `AXDescription` or
+        /// the quoted name in the header's own description (`Track 4 “Name”` on Logic 13, where the
+        /// field's `AXValue` stays "0"). The field's `AXValue` is never evidence: it echoes what
+        /// was written whether or not Logic committed it.
         func verifiedResult(via: String) -> ChannelResult? {
-            guard let observed = observedTrackName(), observed == truncatedName else { return nil }
+            let observed: String
+            if let name = observedTrackName(), name == truncatedName {
+                observed = name
+            } else if AXLogicProElements.renderedTrackNames(at: index, runtime: runtime).contains(truncatedName) {
+                observed = truncatedName
+            } else {
+                return nil
+            }
             return .success(HonestContract.encodeStateA(
                 extras: baseExtras.merging([
                     "observed": observed,
@@ -1752,9 +1770,13 @@ extension AccessibilityChannel {
             AXHelpers.performAction(field, kAXPressAction, runtime: runtime.ax)
             AXHelpers.setAttribute(field, kAXValueAttribute, truncatedName as CFTypeRef, runtime: runtime.ax)
             AXHelpers.performAction(field, kAXConfirmAction, runtime: runtime.ax)
-            usleep(50_000)
-            if let verified = verifiedResult(via: "ax_set_value") {
-                return verified
+            // A single read 50 ms after the confirm was all this took before; a rendered name that
+            // lags the confirm is read a few times before taking the menu route, which needs focus.
+            for _ in 0..<renameReadbackPolls {
+                usleep(100_000)
+                if let verified = verifiedResult(via: "ax_set_value") {
+                    return verified
+                }
             }
         }
 

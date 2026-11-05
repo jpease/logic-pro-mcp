@@ -985,6 +985,41 @@ extension AccessibilityChannel {
         ))
     }
 
+    /// What a `transport.goto_position` request asks for, parsed once for every AX route.
+    enum GotoPositionRequest: Equatable {
+        /// The complete `B.B.S.T` the caller asked for; a `bar` request is `bar.1.1.1`.
+        case position(String)
+        case timecode
+        case invalid
+    }
+
+    static let gotoPositionTimecodeRefusal = "AX gotoPosition cannot handle timecode (use MCU mmc_locate)"
+
+    static var gotoPositionInvalidParams: String {
+        HonestContract.encodeStateC(
+            error: .invalidParams,
+            hint: "goto_position requires 'bar' (Int 1..9999) or 'position' (B.B.S.S)"
+        )
+    }
+
+    static func gotoPositionRequest(from params: [String: String]) -> GotoPositionRequest {
+        if let barStr = params["bar"], let bar = Int(barStr) {
+            return (1...9999).contains(bar) ? .position("\(bar).1.1.1") : .invalid
+        }
+        guard let pos = params["position"] else { return .invalid }
+        if pos.contains(":") { return .timecode }
+        let parts = pos.split(separator: ".", omittingEmptySubsequences: false)
+        guard parts.count == 4,
+              let bar = Int(parts[0]), (1...9999).contains(bar),
+              let beat = Int(parts[1]), (1...16).contains(beat),
+              let subdivision = Int(parts[2]), (1...16).contains(subdivision),
+              let tick = Int(parts[3]), (1...999).contains(tick)
+        else { return .invalid }
+        // Keep the caller's complete request. No route may silently replace its
+        // beat/subdivision/tick components with defaults.
+        return .position("\(bar).\(beat).\(subdivision).\(tick)")
+    }
+
     /// #440 D: the same precondition the CGEvent channel applies. Measured on the release artifact,
     /// driving this from the background lands on the wrong bar — requested 1.1.1.1, observed 3.3.1.1
     /// and 2.3.1.1 on two runs, against 2/2 exact hits with Logic frontmost — so the playhead moves
@@ -1000,41 +1035,14 @@ extension AccessibilityChannel {
         createDialogIssuanceLedger: @escaping @Sendable () -> DialogIssuanceLedger? = DialogIssuanceLedger.create,
         dialogExecutionLockPath: String = AccessibilityChannel.goToPositionDialogExecutionLockPath
     ) async -> ChannelResult {
-        var requestedPosition: String? = nil
-        if let barStr = params["bar"], let b = Int(barStr) {
-            guard (1...9999).contains(b) else {
-                return .error(HonestContract.encodeStateC(
-                    error: .invalidParams,
-                    hint: "goto_position requires 'bar' (Int 1..9999) or 'position' (B.B.S.S)"
-                ))
-            }
-            requestedPosition = "\(b).1.1.1"
-        } else if let pos = params["position"] {
-            if pos.contains(":") {
-                return .error("AX gotoPosition cannot handle timecode (use MCU mmc_locate)")
-            }
-            let parts = pos.split(separator: ".", omittingEmptySubsequences: false)
-            guard parts.count == 4,
-                  let b = Int(parts[0]), (1...9999).contains(b),
-                  let beat = Int(parts[1]), (1...16).contains(beat),
-                  let subdivision = Int(parts[2]), (1...16).contains(subdivision),
-                  let tick = Int(parts[3]), (1...999).contains(tick)
-            else {
-                return .error(HonestContract.encodeStateC(
-                    error: .invalidParams,
-                    hint: "goto_position requires 'bar' (Int 1..9999) or 'position' (B.B.S.S)"
-                ))
-            }
-            // Keep the caller's complete request. The dialog must never silently replace its
-            // beat/subdivision/tick components with defaults.
-            requestedPosition = "\(b).\(beat).\(subdivision).\(tick)"
-        }
-        guard let requestedPosition
-        else {
-            return .error(HonestContract.encodeStateC(
-                error: .invalidParams,
-                hint: "goto_position requires 'bar' (Int 1..9999) or 'position' (B.B.S.S)"
-            ))
+        let requestedPosition: String
+        switch gotoPositionRequest(from: params) {
+        case .position(let position):
+            requestedPosition = position
+        case .timecode:
+            return .error(gotoPositionTimecodeRefusal)
+        case .invalid:
+            return .error(gotoPositionInvalidParams)
         }
 
         var baseExtras: [String: Any] = ["requested": requestedPosition]

@@ -906,8 +906,11 @@ enum AXValueExtractors {
         return only.1
     }
 
-    private static func extractQuotedTrackName(from description: String) -> String? {
-        let patterns = ["‘([^’]+)’", "'([^']+)'", "\"([^\"]+)\""]
+    /// The track name quoted inside a header's description. Logic 12.x writes
+    /// `4개의 ‘Holographic Squares’ 트랙`; Logic 13.0 (en, measured 2026-11-05) writes
+    /// `Track 4 “Studio Grand”`.
+    static func extractQuotedTrackName(from description: String) -> String? {
+        let patterns = ["‘([^’]+)’", "“([^”]+)”", "'([^']+)'", "\"([^\"]+)\""]
         for pattern in patterns {
             if let regex = try? NSRegularExpression(pattern: pattern),
                let match = regex.firstMatch(in: description, range: NSRange(description.startIndex..., in: description)),

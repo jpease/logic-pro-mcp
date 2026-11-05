@@ -406,6 +406,13 @@ actor AccessibilityChannel: Channel {
             // in-request read fixes it and an earlier one does not. Do not delete this as a
             // pointless warm-up without reproducing that pair first.
             _ = runtime.transportState()
+            // The dialog route below brings Logic forward and types the position; the render path
+            // does neither, so it steps the control bar's position sliders instead.
+            if FocusFreeRenderPath.isActive {
+                return AccessibilityChannel.gotoPositionViaControlBarSteps(
+                    params: params, runtime: runtime.logicRuntime
+                )
+            }
             return await AccessibilityChannel.gotoPositionViaBarSlider(
                 params: params, runtime: runtime.logicRuntime
             )

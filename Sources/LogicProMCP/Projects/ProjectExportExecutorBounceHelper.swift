@@ -2,6 +2,10 @@ import Darwin
 import Foundation
 
 extension ProjectExportExecutor {
+    static let bounceHelperFocusAction =
+        "the Bounce helper, which clicks and types into Logic's Bounce save panel and switches the keyboard input source"
+    static let focusFreeRenderPathRefusalPrefix = "refused_by_focus_free_render_path"
+
     static func bounceHelperResult(from output: BoundedProcessRunner.Output) -> BounceHelperResult {
         let stderr = output.stderr.trimmingCharacters(in: .whitespacesAndNewlines)
         let stdout = output.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -61,6 +65,12 @@ extension ProjectExportExecutor {
             )
         }
     ) async -> BounceHelperResult {
+        // `logic_bounce.py` clicks and types into Logic's Bounce save panel with CGEvent and
+        // switches the keyboard input source, in its own process where the in-process guards do
+        // not reach. The render path (`FocusFreeRenderPath`) does not start it.
+        if FocusFreeRenderPath.refuses(bounceHelperFocusAction) {
+            return .failure("\(focusFreeRenderPathRefusalPrefix): \(bounceHelperFocusAction)")
+        }
         guard let helper = resolveBounceHelperPath(
             environment: environment,
             currentDirectoryPath: currentDirectoryPath,

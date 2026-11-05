@@ -23,8 +23,14 @@ enum AppleScriptSafety {
         )
     }
 
-    static func openArguments(for url: URL, bundleID: String) -> [String] {
-        ["-b", bundleID, url.path]
+    /// `open -b` brings the app forward. On the render path (`FocusFreeRenderPath`, e.g.
+    /// `export_run` opening its projects) `-g` keeps Logic in the background.
+    static func openArguments(
+        for url: URL,
+        bundleID: String,
+        background: Bool = FocusFreeRenderPath.isActive
+    ) -> [String] {
+        (background ? ["-g"] : []) + ["-b", bundleID, url.path]
     }
 
     /// Allowed transport actions — whitelist only.

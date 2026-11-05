@@ -15,6 +15,10 @@ import Foundation
 enum FocusFreeRenderPath {
     @TaskLocal static var isActive = false
 
+    /// Told every refused action in the current task. A route that replaced a focus-dependent step
+    /// is proven focus-free by running it with this bound and seeing it called zero times.
+    @TaskLocal static var refusalObserver: (@Sendable (String) -> Void)?
+
     /// `tool.command` pairs that run under the policy.
     static let commands: Set<String> = [
         "logic_tracks.record_sequence",
@@ -32,6 +36,7 @@ enum FocusFreeRenderPath {
     /// True, and logged, when the current task runs under the policy and must not do `action`.
     static func refuses(_ action: String) -> Bool {
         guard isActive else { return false }
+        refusalObserver?(action)
         Log.warn(
             "render path refused \(action): it would take keyboard focus or send keystrokes to the focused app",
             subsystem: "ax"
