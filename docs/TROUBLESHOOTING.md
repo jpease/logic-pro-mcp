@@ -163,6 +163,10 @@ Select an instrument track, verify the channel is `1..16`, and confirm the track
 
 MIDI imports are constrained to safe locations. Prefer `record_sequence`, which uses private server-managed temp files.
 
+### `record_sequence` timed out but a region appeared later
+
+`operation_timeout` ends the MCP request, not necessarily the work behind it. The import is skipped if the deadline fires before the import script starts; once the script is running it completes, so the track and region can appear after the timeout reply. Check `logic://tracks` before calling `record_sequence` again, or the retry adds a second track.
+
 ## MIDI Key Commands and Scripter
 
 ### `manual_validation_required`

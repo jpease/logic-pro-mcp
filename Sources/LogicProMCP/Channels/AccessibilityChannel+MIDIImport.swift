@@ -548,6 +548,25 @@ extension AccessibilityChannel {
         end importMIDI
         return importMIDI()
         """
+        // The script below is the point of no return: its menu click makes Logic create a track
+        // and a region. `LogicProServer.runWithDeadline` answers a request that outlived its
+        // deadline with `operation_timeout` and cancels this task, but cancellation is cooperative
+        // and the reads above can be what used the time up. Without this check an abandoned
+        // `record_sequence` went on to import after its caller had already been told it failed.
+        guard !Task.isCancelled else {
+            return .error(HonestContract.encodeStateC(
+                error: .operationTimeout,
+                hint: "midi.import_file was cancelled before the import menu action, so no import was started.",
+                extras: [
+                    "requested": path,
+                    "track_count_before": beforeCount,
+                    "failure_stage": "before_import_script",
+                    "write_attempted": false,
+                    "file_open_dialog_seen": false,
+                    "tempo_dialog_seen": false,
+                ]
+            ))
+        }
         // #452: the only measurement of the segment the osascript bound governs.
         // The clock brackets the call rather than the executor, so it observes
         // whatever actually ran — wrapping the injected closure instead would

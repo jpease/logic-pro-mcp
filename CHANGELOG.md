@@ -10,6 +10,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) 
 
 ### Fixed
 - `logic_tracks resolve_path` no longer waits for Accessibility work it has no part in. The lookup reads only the cached scan trees, but it ran on the Accessibility channel's actor, so it queued behind any synchronous AX read holding that actor (a state-poll section on a large project, or an operation the server deadline had already abandoned) for as long as the read took, and could run past its 25 s deadline. It is now answered without entering the actor; responses are unchanged.
+- `record_sequence` no longer starts its import after its request has timed out. The request deadline cancels the abandoned work, but nothing on the import path read the cancellation, so a request whose pre-import Accessibility reads used up the 300 s deadline could still run File > Import > MIDI File after the caller had received `operation_timeout`, and a track and region appeared after the failure reply. `midi.import_file` now checks cancellation immediately before its import script and returns State C `operation_timeout` with `failure_stage: "before_import_script"` and `write_attempted: false` instead. A script that has already started is not interrupted, so a timeout during the import or the region readback can still leave a new track and region; the `operation_timeout` reply keeps `underlying_operation_stopped: false` for that case.
 
 ---
 

@@ -150,6 +150,8 @@ For Library patches, treat `presetsByCategory` as a browse/catalog view. Default
 
 `record_sequence` writes a server-generated MIDI file under a private server-managed temp directory, imports it into Logic, and verifies the created region. If the import returns an unverified State B result, including GM Device / External MIDI lanes that can bounce silent, `record_sequence` fails closed with `audibility_unverified` or `import_unverified` instead of promoting region readback to audible success.
 
+When `record_sequence` (or `midi.import_file`) reaches its server-side deadline, the caller gets `operation_timeout` with `safe_to_retry: false` and `underlying_operation_stopped: false`. The abandoned work is cancelled, and `midi.import_file` checks that cancellation immediately before it runs the import script: if the deadline fired first, no import is started. Once the script has started it is not interrupted, so a timeout that lands during the import or the region readback can still leave a new track and region in the project. Read `logic://tracks` or `logic_project get_regions` before retrying.
+
 ### `logic_mixer`
 
 Public commands: `set_volume`, `set_pan`, `set_master_volume`, `set_plugin_param`, `insert_plugin`, `bank`.
