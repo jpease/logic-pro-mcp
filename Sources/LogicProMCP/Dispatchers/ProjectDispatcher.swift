@@ -7,7 +7,10 @@ struct ProjectDispatcher: OperationTraceDispatching {
     /// A stem plan may only reuse a recent, complete project/track/region
     /// snapshot. The scanner is deliberately cache-only: dry-run planning
     /// does not open a requested project merely to manufacture subjects.
-    private static let stemSubjectInventoryMaximumAge: TimeInterval = 10
+    // Fork-local: on Logic 13 a state-poll cycle can take longer than 10 s, so the project and
+    // track reads behind a stem export were always stale by the time it ran. 60 s still rejects
+    // a scan from before another project was opened.
+    private static let stemSubjectInventoryMaximumAge: TimeInterval = 60
 
     struct LifecycleExecution: Sendable {
         let executionError: String?
