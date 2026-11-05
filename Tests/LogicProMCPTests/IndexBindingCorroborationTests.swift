@@ -206,12 +206,13 @@ private func writeAttempted(_ result: CallTool.Result) -> Bool? {
 
     #expect(!(result.isError!), "corroborated delete must proceed unchanged")
 
-    // The pre-existing index write path is untouched: select-then-delete.
+    // The pre-existing index write path is untouched: select-then-delete, the select made without
+    // bringing Logic forward.
     let mcuOps = await mcu.executedOps
     let keyCmdOps = await keyCmd.executedOps
     #expect(mcuOps.count == 1)
     #expect(mcuOps[0].0 == "track.select")
-    #expect(mcuOps[0].1 == ["index": "2"])
+    #expect(mcuOps[0].1 == ["index": "2", "activate": "false"])
     #expect(keyCmdOps.count == 1)
     #expect(keyCmdOps[0].0 == "track.delete")
     // The corroboration param is a binding proof, not a write param — it must

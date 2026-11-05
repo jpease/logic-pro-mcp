@@ -578,7 +578,8 @@ struct TargetRefResolutionTests {
             let v1 = try #require(result.isError)
             #expect(!v1)
             #expect(echoedTargetRef(result) == reference.rawValue)
-            #expect(await opParams(channels, "track.select") == ["index": "2"])
+            // The same select as the `expected_name` delete: no activation.
+            #expect(await opParams(channels, "track.select") == ["index": "2", "activate": "false"])
             #expect(await allOps(channels).contains(where: { $0.0 == "track.delete" }))
         }
     }

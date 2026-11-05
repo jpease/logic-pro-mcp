@@ -108,7 +108,8 @@ private actor StateBSelectMockChannel: Channel {
     let keyCmdOps = await keyCmd.executedOps
     #expect(mcuOps.count == 1)
     #expect(mcuOps[0].0 == "track.select")
-    #expect(mcuOps[0].1 == ["index": "3"])
+    // Delete selects without bringing Logic forward.
+    #expect(mcuOps[0].1 == ["index": "3", "activate": "false"])
     #expect(keyCmdOps.count == 1)
     #expect(keyCmdOps[0].0 == "track.delete")
 }

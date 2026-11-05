@@ -637,9 +637,16 @@ extension AccessibilityChannel {
         return .error("No track is currently selected")
     }
 
+    /// `track.select` parameter that skips bringing Logic forward: `"false"` selects through the AX
+    /// ladder alone, and the readback decides whether that landed. Track delete passes it. On Logic
+    /// 13.0 (2026-11-05) a delete whose select activated Logic first was refused with the selection
+    /// unverified, and the same delete selecting without activation was verified and deleted.
+    static let selectActivateParam = "activate"
+
     static func defaultSelectTrack(
         params: [String: String],
-        runtime: AXLogicProElements.Runtime = .production
+        runtime: AXLogicProElements.Runtime = .production,
+        processRuntime: ProcessUtils.Runtime = .production
     ) async -> ChannelResult {
         guard let indexStr = params["index"], let index = Int(indexStr) else {
             return .error("Missing or invalid 'index' parameter")
@@ -658,10 +665,10 @@ extension AccessibilityChannel {
         // v3.0.3+ — activate Logic so the frontmost-dependent AX selection can
         // land, then go through the AX-native selection ladder (ADR-001: no
         // coordinate fallback — fail closed if every AX step is rejected).
-        // The render path (`FocusFreeRenderPath`, e.g. track delete) never activates: it selects
-        // through the AX ladder alone, and the readback below decides whether that landed.
-        if !FocusFreeRenderPath.isActive {
-            _ = ProcessUtils.Runtime.production.activateLogicPro()
+        // The render path (`FocusFreeRenderPath`) and callers passing `activate: "false"` never
+        // activate: they select through the AX ladder alone.
+        if !FocusFreeRenderPath.isActive, params[selectActivateParam] != "false" {
+            _ = processRuntime.activateLogicPro()
             try? await Task.sleep(nanoseconds: 150_000_000)
         }
         guard AXLogicProElements.selectTrackViaAX(at: index, runtime: runtime) else {

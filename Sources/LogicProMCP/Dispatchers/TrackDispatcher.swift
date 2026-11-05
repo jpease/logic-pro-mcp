@@ -211,10 +211,15 @@ struct TrackDispatcher: OperationTraceDispatching {
                 return bindingFailure
             }
             let traceID = await startTraceIfEnabled(command: command)
+            // Selected without bringing Logic forward, for `index` + `expected_name` and
+            // `target_ref` alike (see `AccessibilityChannel.selectActivateParam`).
             let selectResult = await withWriteBoundaryArmed(traceID) {
                 await router.route(
                     operation: "track.select",
-                    params: ["index": String(index)]
+                    params: [
+                        "index": String(index),
+                        AccessibilityChannel.selectActivateParam: "false",
+                    ]
                 )
             }
             guard selectResult.isSuccess else {

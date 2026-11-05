@@ -2140,7 +2140,7 @@ func testTransportDispatcherStillnessRefusalsBeforeTheKeyAreStateC(
     let mcuOps = await mcu.executedOps
     let keyCmdOps = await keyCmd.executedOps
     expectExecutedOps(mcuOps, equals: [
-        ("track.select", ["index": "2"]),
+        ("track.select", ["index": "2", "activate": "false"]),
         ("track.select", ["index": "2"]),
     ])
     expectExecutedOps(keyCmdOps, equals: [
