@@ -8,6 +8,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) 
 
 ## [Unreleased]
 
+### Fixed
+- `logic_tracks resolve_path` no longer waits for Accessibility work it has no part in. The lookup reads only the cached scan trees, but it ran on the Accessibility channel's actor, so it queued behind any synchronous AX read holding that actor (a state-poll section on a large project, or an operation the server deadline had already abandoned) for as long as the read took, and could run past its 25 s deadline. It is now answered without entering the actor; responses are unchanged.
+
 ---
 
 ## [3.18.0] — 2026-09-28
