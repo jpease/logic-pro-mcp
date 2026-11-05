@@ -2142,6 +2142,22 @@ enum AXLocalePolicy {
         derivedFrom: "logic-canon://strings/Contents%2FFrameworks%2FLogic.framework%2FVersions%2FA%2FResources%2FLocalizable.strings/en/StrTabBtnLabel%7C%7C%7CBrowser#value"
     )
 
+    /// The Browser sidebar's Instruments category toggle (`AXCheckBox`), which set_instrument turns
+    /// on before searching for a patch.
+    static let browserInstrumentsCategory = LabelSet(
+        canonical: "Instruments",
+        variants: [],
+        rationale: "Finds the Browser sidebar's Instruments category toggle for set_instrument on Logic 13. Read live on Logic 13.0 (en) on 2026-11-05: an AXCheckBox described `Instruments` beside All, Loops & One-Shots, Effects and Plug-in Presets. Only en was read; no Localizable.strings row was named."
+    )
+
+    /// The Browser sidebar's User Content section (`AXScrollArea`), whose toggles are the user's
+    /// Locations; a selected Location narrows every search to its folder.
+    static let browserUserContentSection = LabelSet(
+        canonical: "User Content",
+        variants: [],
+        rationale: "Finds the Browser sidebar's User Content section so set_instrument can deselect Locations before a patch search. Read live on Logic 13.0 (en) on 2026-11-05: an AXScrollArea described `User Content` holding a `Locations` disclosure triangle and one AXCheckBox per Location. Only en was read; no Localizable.strings row was named."
+    )
+
     /// Slider type hints (mutually exclusive groups in `sliderText`).
     static let sliderSendHint = LabelSet(
         canonical: "send",
@@ -3272,6 +3288,8 @@ enum AXLocalePolicy {
         mixerInspectorContext,
         mixerNamedElement,
         browserPanelLabel,
+        browserInstrumentsCategory,
+        browserUserContentSection,
         sliderSendHint,
         sliderZoomHint,
         sliderVolumeHint,

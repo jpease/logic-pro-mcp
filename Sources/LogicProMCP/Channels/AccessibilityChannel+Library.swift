@@ -675,11 +675,16 @@ extension AccessibilityChannel {
     static let setInstrumentFocusAction =
         "loading an instrument patch, whose Library route closes menus with Escape and falls back to synthetic clicks"
 
+    static func externalMIDITargetHint(index: Int) -> String {
+        "Target track \(index) is a GM Device / External MIDI strip; software-instrument Library patches cannot be loaded onto it. Target a Software Instrument track instead."
+    }
+
     static func setTrackInstrument(
         params: [String: String],
         runtime: AXLogicProElements.Runtime = .production,
         staging: LibraryPanelStaging = .production,
-        canPostEvents: @escaping @Sendable () -> Bool = { CGPreflightPostEventAccess() }
+        canPostEvents: @escaping @Sendable () -> Bool = { CGPreflightPostEventAccess() },
+        browserPause: @escaping @Sendable (UInt64) async -> Void = { try? await Task.sleep(nanoseconds: $0) }
     ) async -> ChannelResult {
         // Resolve path-OR-legacy. Path wins when both provided.
         let pathParam = params["path"].flatMap { $0.isEmpty ? nil : $0 }
@@ -730,11 +735,28 @@ extension AccessibilityChannel {
             requestedTrackIndex = nil
         }
 
-        // The render path (`FocusFreeRenderPath`) has no route here yet, and a partial one is worse
+        // Logic 13 replaced the Library with the Browser, which this route drives by Accessibility
+        // alone (`setTrackInstrumentViaBrowser`); it runs on the render path too. A control bar
+        // without the Browser toggle, or whose toggle shows no Browser, is Logic 12's Library.
+        switch await setTrackInstrumentViaBrowser(
+            requestedTrackIndex: requestedTrackIndex,
+            requestedPath: resolvedPath,
+            category: category,
+            preset: preset,
+            pathSegments: pathSegments,
+            runtime: runtime,
+            pause: browserPause
+        ) {
+        case .result(let result):
+            return result
+        case .noBrowser:
+            break
+        }
+
+        // The render path (`FocusFreeRenderPath`) has no Library route, and a partial one is worse
         // than none: the Library route opens the View menu by AXPress and closes it with a
         // synthetic Escape, which the render path refuses, so a failed lookup would leave Logic's
-        // View menu open; its row picks fall back to synthetic clicks; and Logic 13 replaced the
-        // Library with the Browser, which this route does not know. Refused before anything is
+        // View menu open; its row picks fall back to synthetic clicks. Refused before anything is
         // touched.
         if FocusFreeRenderPath.refuses(setInstrumentFocusAction) {
             return .error(FocusFreeRenderPath.refusal(setInstrumentFocusAction))
@@ -862,7 +884,7 @@ extension AccessibilityChannel {
             if observedType == .externalMIDI {
                 return .error(HonestContract.encodeStateC(
                     error: .unsupportedTrackType,
-                    hint: "Target track \(idx) is a GM Device / External MIDI strip; software-instrument Library patches cannot be loaded onto it. Target a Software Instrument track instead.",
+                    hint: externalMIDITargetHint(index: idx),
                     extras: setInstrumentBaseExtras(
                         requestedPath: resolvedPath,
                         category: category,
@@ -1078,7 +1100,7 @@ extension AccessibilityChannel {
         return (panelOpen: staging.isPanelOpen(runtime), reopened: true)
     }
 
-    private static func setInstrumentBaseExtras(
+    static func setInstrumentBaseExtras(
         requestedPath: String,
         category: String,
         preset: String,
@@ -1098,7 +1120,7 @@ extension AccessibilityChannel {
         ]
     }
 
-    private static func selectedTrackIdentity(
+    static func selectedTrackIdentity(
         runtime: AXLogicProElements.Runtime
     ) -> (index: Int, name: String?)? {
         let headers = AXLogicProElements.allTrackHeaders(runtime: runtime)

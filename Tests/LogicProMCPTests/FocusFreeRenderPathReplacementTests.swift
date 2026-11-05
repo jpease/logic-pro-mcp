@@ -419,9 +419,11 @@ extension FocusFreeRenderPathTests {
             == ["-b", "com.apple.logic10", "/tmp/song.logicx"])
     }
 
-    // MARK: - set_instrument and record_sequence: refused before anything is touched
+    // MARK: - set_instrument's Library route and record_sequence: refused before anything is touched
 
-    @Test func setInstrumentIsRefusedBeforeTouchingLogic() async {
+    /// Without a Logic 13 Browser (here, no window at all) set_instrument takes the Library route,
+    /// which the render path refuses. The Browser route is in Logic13BrowserInstrumentTests.
+    @Test func setInstrumentWithoutABrowserIsRefusedBeforeTouchingLogic() async {
         let builder = FakeAXRuntimeBuilder()
         let scripts = Strings()
         let runtime = builder.makeLogicRuntime(
