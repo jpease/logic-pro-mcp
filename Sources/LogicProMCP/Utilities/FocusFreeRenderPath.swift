@@ -7,10 +7,14 @@ import Foundation
 /// keyboard away from the owner. On 2026-11-05 a render-path session on Logic 13 ended with Logic
 /// recording on its own; `R` is Logic's Record key.
 ///
-/// While a render-path command runs, `isActive` is true for its task and every task it starts, and
-/// the input primitives refuse instead of acting: `ProcessUtils` activation, `FrontmostGate`
-/// activation, AppleScript that types or brings an app forward, the CGEvent channel, and the
-/// direct CGEvent posts on those paths. A refused step is a State C `not_supported` with
+/// The policy is off unless the server runs with `LOGIC_PRO_MCP_FOCUS_FREE_RENDER=1`. Off, the
+/// render-path commands take their ordinary routes, which may bring Logic forward and type (the MIDI
+/// import's Open panel, Go To Position); renders that run with nobody at the keyboard want those.
+///
+/// While the policy is on and a render-path command runs, `isActive` is true for its task and every
+/// task it starts, and the input primitives refuse instead of acting: `ProcessUtils` activation,
+/// `FrontmostGate` activation, AppleScript that types or brings an app forward, the CGEvent channel,
+/// and the direct CGEvent posts on those paths. A refused step is a State C `not_supported` with
 /// `refused_by: "focus_free_render_path"`, never a silent skip.
 enum FocusFreeRenderPath {
     @TaskLocal static var isActive = false
@@ -19,7 +23,25 @@ enum FocusFreeRenderPath {
     /// is proven focus-free by running it with this bound and seeing it called zero times.
     @TaskLocal static var refusalObserver: (@Sendable (String) -> Void)?
 
-    /// `tool.command` pairs that run under the policy.
+    static let environmentKey = "LOGIC_PRO_MCP_FOCUS_FREE_RENDER"
+
+    #if DEBUG
+    @TaskLocal static var enabledOverride: Bool?
+    #endif
+
+    /// Whether `environment` turns the policy on.
+    static func isEnabled(in environment: [String: String]) -> Bool {
+        environment[environmentKey] == "1"
+    }
+
+    static var isEnabled: Bool {
+        #if DEBUG
+        if let enabledOverride { return enabledOverride }
+        #endif
+        return isEnabled(in: ProcessInfo.processInfo.environment)
+    }
+
+    /// `tool.command` pairs that run under the policy when it is on.
     static let commands: Set<String> = [
         "logic_tracks.record_sequence",
         "logic_tracks.set_instrument",
@@ -30,7 +52,7 @@ enum FocusFreeRenderPath {
     ]
 
     static func covers(tool: String, command: String) -> Bool {
-        commands.contains("\(tool).\(command)")
+        isEnabled && commands.contains("\(tool).\(command)")
     }
 
     /// True, and logged, when the current task runs under the policy and must not do `action`.

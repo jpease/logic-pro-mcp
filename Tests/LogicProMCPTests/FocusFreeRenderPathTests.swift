@@ -33,20 +33,48 @@ struct FocusFreeRenderPathTests {
     @Test(arguments: renderPath)
     func aRenderPathCommandRunsUnderThePolicy(_ tool: String, _ command: String) async {
         let seen = Seen()
-        _ = await LogicProServer.runWithDeadline(tool: tool, command: command) {
-            seen.set(FocusFreeRenderPath.isActive)
-            return toolTextResult("ok")
+        _ = await FocusFreeRenderPath.$enabledOverride.withValue(true) {
+            await LogicProServer.runWithDeadline(tool: tool, command: command) {
+                seen.set(FocusFreeRenderPath.isActive)
+                return toolTextResult("ok")
+            }
         }
         #expect(seen.current == true)
     }
 
     @Test func aCommandOutsideTheRenderPathDoesNot() async {
         let seen = Seen()
-        _ = await LogicProServer.runWithDeadline(tool: "logic_tracks", command: "rename") {
-            seen.set(FocusFreeRenderPath.isActive)
-            return toolTextResult("ok")
+        _ = await FocusFreeRenderPath.$enabledOverride.withValue(true) {
+            await LogicProServer.runWithDeadline(tool: "logic_tracks", command: "rename") {
+                seen.set(FocusFreeRenderPath.isActive)
+                return toolTextResult("ok")
+            }
         }
         #expect(seen.current == false)
+    }
+
+    /// Off by default: a render-path command takes its ordinary routes unless the server runs with
+    /// `LOGIC_PRO_MCP_FOCUS_FREE_RENDER=1`.
+    @Test(arguments: renderPath)
+    func theRenderPathPolicyIsOffUnlessEnabled(_ tool: String, _ command: String) async {
+        let seen = Seen()
+        _ = await FocusFreeRenderPath.$enabledOverride.withValue(false) {
+            await LogicProServer.runWithDeadline(tool: tool, command: command) {
+                seen.set(FocusFreeRenderPath.isActive)
+                return toolTextResult("ok")
+            }
+        }
+        #expect(seen.current == false)
+    }
+
+    @Test(arguments: [
+        ([:], false),
+        (["LOGIC_PRO_MCP_FOCUS_FREE_RENDER": "1"], true),
+        (["LOGIC_PRO_MCP_FOCUS_FREE_RENDER": "0"], false),
+        (["LOGIC_PRO_MCP_FOCUS_FREE_RENDER": "true"], false),
+    ])
+    func theEnvironmentVariableTurnsThePolicyOn(_ environment: [String: String], _ enabled: Bool) {
+        #expect(FocusFreeRenderPath.isEnabled(in: environment) == enabled)
     }
 
     @Test func activationIsRefused() async {
