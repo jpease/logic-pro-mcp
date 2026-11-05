@@ -674,9 +674,10 @@ final class AXSurface: ProjectStemExportPanelDriver.Surface, @unchecked Sendable
             let role: String
             switch readAttribute(element, kAXRoleAttribute as String) as Result<String?, PanelReadFailure> {
             case .failure, .success(nil):
-                // A role is the mandatory census evidence. An element with no
-                // readable role cannot safely be omitted as irrelevant.
-                return .failure(.unavailable)
+                // Fork-local: on Logic 13 the panel's file browser keeps loading rows while it is
+                // read, so some elements briefly have no readable role. They are file entries, not
+                // buttons or popups, and the signature below still needs its exact counts.
+                continue
             case let .success(.some(value)):
                 role = value
             }
